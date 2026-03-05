@@ -60,10 +60,11 @@ You've seen [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — th
 
 ### Monitoring & Reliability (DigitalMe Enhanced)
 
-- **Real-time Dashboard** — dark-themed glassmorphism UI, accessible from any browser
-- **Heartbeat Monitor** — periodic health checks with visual history strip
+- **Real-time Dashboard** — precision dark-themed UI with SVG heartbeat line, accessible from any browser
+- **Heartbeat Monitor** — periodic health checks with visual history chart
 - **Idle Session Reminder** — auto-reminds users when sessions go idle, repeating until response
 - **Smart Status Detection** — heartbeat degrades to warning when idle reminders get no response
+- **Remote Screenshot** — `/screenshot` command captures your screen and sends it to chat
 - **REST API** — query system status, engine health, session activity programmatically
 
 ## Dashboard
@@ -157,6 +158,7 @@ Open `http://localhost:9315` for the dashboard.
 | Persistent sessions | Yes | Yes | Yes |
 | Heartbeat monitoring | No | No | **Yes** |
 | Idle reminders | No | No | **Yes** |
+| Remote screenshot | No | No | **Yes** |
 | Multi-platform chat | No | No | **Yes** |
 | Self-hosted | Yes | Cloud | **Yes** |
 
@@ -170,6 +172,7 @@ Open `http://localhost:9315` for the dashboard.
 | `/stop` | Stop the current agent process |
 | `/model <name>` | Change the AI model |
 | `/mode <mode>` | Change permission mode |
+| `/screenshot` `/ss` | Capture screen and send to chat |
 | `/version` | Show version info |
 | `/help` | Show all commands |
 
@@ -181,9 +184,34 @@ Open `http://localhost:9315` for the dashboard.
 - **Dashboard**: Embedded HTML with glassmorphism CSS, vanilla JS, REST API backend
 - **Storage**: SQLite-based session persistence
 
+## Changelog
+
+### v0.4.0 — Remote Screenshot
+- `/screenshot` (`/ss`) command: capture your screen and receive it in chat
+- `ImageSender` interface for platforms to send image messages
+- Feishu image upload and send support
+
+### v0.3.0 — Precision Dashboard
+- Complete UI redesign: dark theme with SVG heartbeat line chart
+- Teal accent palette replacing generic purple gradients
+- Live clock, animated status pill, grid texture background
+- Staggered entrance animations, responsive two-column layout
+
+### v0.2.0 — Heartbeat + Idle Integration
+- Heartbeat status degrades when idle reminders get no response
+- Idle reminder repeats every interval (not just once)
+- SVG heartbeat chart: full height = healthy, 40% = degraded, 10% = unhealthy
+
+### v0.1.0 — Initial Enhanced Features
+- Web UI dashboard with real-time status monitoring
+- Heartbeat monitor with configurable check interval
+- Idle session reminder with configurable threshold
+- REST API: `/api/status`, `/api/engines`, `/api/heartbeat`, `/api/activity`
+- Cloudflare Tunnel support for external access
+
 ## Credits
 
-Built on top of the excellent [cc-connect](https://github.com/chenhg5/cc-connect) multi-agent platform. Enhanced with monitoring, dashboard, and reliability features.
+Built on top of the excellent [cc-connect](https://github.com/chenhg5/cc-connect) multi-agent platform. Enhanced with monitoring, dashboard, screenshot, and reliability features.
 
 ## License
 

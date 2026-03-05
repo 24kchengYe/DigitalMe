@@ -86,8 +86,8 @@ The built-in web dashboard provides real-time visibility into your DigitalMe ins
 ### Prerequisites
 
 - [Go 1.22+](https://go.dev/dl/)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
-- A messaging platform bot configured (e.g., Feishu, Telegram)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (`claude` command available in terminal)
+- A messaging platform bot configured (see [Feishu Setup Guide](#feishu-setup-guide) below)
 
 ### Build
 
@@ -102,7 +102,7 @@ go build -o digitalme ./cmd/cc-connect/
 Create `~/.cc-connect/config.toml`:
 
 ```toml
-language = "en"          # "en", "zh", "ja", "es"
+language = "zh"          # "en", "zh", "ja", "es"
 
 [[projects]]
 name = "my-project"
@@ -112,14 +112,14 @@ type = "claudecode"      # or "codex", "cursor", "gemini", "qoder", "opencode"
 
 [projects.agent.options]
 work_dir = "/path/to/your/project"
-mode = "default"         # "default", "acceptEdits", "plan", "bypassPermissions"
+mode = "bypassPermissions"  # "default", "acceptEdits", "plan", "bypassPermissions"
 
 # Pick your platform (at least one)
 [[projects.platforms]]
 type = "feishu"
 
 [projects.platforms.options]
-app_id = "your-app-id"
+app_id = "cli_xxxxxxxxxx"
 app_secret = "your-app-secret"
 
 # ── Monitoring ──
@@ -131,7 +131,18 @@ heartbeat_interval = 30   # seconds
 
 [idle]
 enabled = true
-idle_minutes = 30          # remind after N minutes idle
+idle_minutes = 20          # remind after N minutes idle
+
+# ── Voice Recognition (optional) ──
+
+[speech]
+enabled = true
+provider = "local"         # "local", "openai", "groq"
+language = "zh"
+
+[speech.local]
+exe_path = "/path/to/whisper-cli"
+model_path = "/path/to/ggml-base.bin"
 ```
 
 ### Run
@@ -141,6 +152,119 @@ idle_minutes = 30          # remind after N minutes idle
 ```
 
 Open `http://localhost:9315` for the dashboard.
+
+---
+
+## Feishu Setup Guide
+
+Step-by-step guide to connect DigitalMe with Feishu (飞书). Takes about 10 minutes.
+
+### Step 1: Create a Feishu App
+
+1. Go to [Feishu Open Platform](https://open.feishu.cn/app) and log in
+2. Click **"Create Custom App"** (创建企业自建应用)
+3. Fill in:
+   - **App Name**: `DigitalMe` (or any name you like)
+   - **Description**: AI coding assistant bridge
+   - **App Icon**: upload any icon
+4. Click **Create**
+
+### Step 2: Get App Credentials
+
+1. In the app dashboard, go to **"Credentials & Basic Info"** (凭证与基础信息)
+2. Copy the **App ID** (格式: `cli_xxxxxxxxxx`)
+3. Copy the **App Secret**
+4. Paste both into your `config.toml`:
+
+```toml
+[projects.platforms.options]
+app_id = "cli_xxxxxxxxxx"        # ← your App ID
+app_secret = "your-app-secret"   # ← your App Secret
+```
+
+### Step 3: Add Bot Capability
+
+1. In the left sidebar, go to **"Add Capabilities"** (添加应用能力)
+2. Click **"Bot"** (机器人) → **Add**
+3. This enables your app to receive and send messages
+
+### Step 4: Configure Event Subscription (WebSocket)
+
+1. Go to **"Event Subscriptions"** (事件订阅) in the left sidebar
+2. **Choose connection method**: Select **"WebSocket"** (长连接) — this is critical!
+   - WebSocket mode means **no public IP needed**, no webhook URL required
+   - Your local machine connects outbound to Feishu servers
+3. Add the following event:
+   - `im.message.receive_v1` — Receive messages
+
+### Step 5: Add Permissions
+
+Go to **"Permissions & Scopes"** (权限管理) and add these permissions:
+
+| Permission | Scope ID | Purpose |
+|---|---|---|
+| Send messages as bot | `im:message:send_as_bot` | Send replies to users |
+| Read private messages | `im:message.p2p_msg:readonly` | Receive user messages |
+| Upload images | `im:resource` | Screenshot and image features |
+
+> **Tip**: Search for the scope ID in the search box to find each permission quickly.
+
+**Optional permissions** (for advanced features):
+
+| Permission | Scope ID | Purpose |
+|---|---|---|
+| Upload files | `im:file` | `/sendback` file sending (if `im:resource` alone doesn't work) |
+| Get user info | `contact:user.base:readonly` | Display user names in logs |
+
+### Step 6: Publish the App
+
+1. Go to **"Version Management"** (版本管理与发布)
+2. Click **"Create Version"** (创建版本)
+3. Fill in version number (e.g., `1.0.0`) and update description
+4. Set **availability**: choose which users/departments can use the bot
+5. Click **"Submit for Review"** (提交审核)
+6. If you are the org admin, approve it immediately in the admin console
+
+### Step 7: Start Chatting
+
+1. Open Feishu on your phone or desktop
+2. Search for your bot name (e.g., `DigitalMe`)
+3. Start a private chat with it
+4. Make sure `digitalme` is running on your computer
+5. Send a message — you should see Claude Code respond!
+
+### Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| Bot doesn't respond | Check that `digitalme` is running; check terminal logs for errors |
+| `permission denied` error | Go back to Step 5 and add the missing permission scope, then re-publish |
+| `event not received` | Make sure you selected **WebSocket** mode (not Webhook) in Step 4 |
+| Messages delayed | Normal on first message — Claude Code needs ~5s to start a session |
+| Voice messages not working | Install ffmpeg + whisper.cpp, enable `[speech]` in config.toml |
+
+### Architecture
+
+```
+  📱 Feishu App (your phone)
+     │
+     │  WebSocket (outbound from your machine, no public IP needed)
+     │
+     ▼
+  ⚡ DigitalMe (on your PC/server)
+     │
+     ▼
+  🤖 Claude Code CLI (persistent process)
+     │
+     ▼
+  📂 Your Codebase
+```
+
+Key points:
+- **No public IP required** — WebSocket connects outbound from your machine to Feishu servers
+- **No webhook URL** — unlike Slack or Telegram webhook mode
+- **Always-on** — as long as `digitalme` is running, the bot is active
+- **Multi-session** — use `/new` to create multiple conversations, `/list` to switch
 
 ## REST API
 

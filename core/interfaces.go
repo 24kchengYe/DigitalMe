@@ -3,6 +3,10 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 // Platform abstracts a messaging platform (Feishu, DingTalk, Slack, etc.).
@@ -43,43 +47,56 @@ type SessionEnvInjector interface {
 // AgentSystemPrompt returns the system prompt fragment that informs agents about
 // cc-connect capabilities (cron scheduling, etc.).
 // The prompt is designed to be appended to the agent's existing system prompt.
+// It uses the actual executable name so commands work regardless of binary name.
 func AgentSystemPrompt() string {
-	return `You are running inside cc-connect, a bridge that connects you to messaging platforms.
-Your responses are automatically delivered to the user — just reply normally, do NOT use cc-connect send.
+	bin := "cc-connect"
+	if exePath, err := os.Executable(); err == nil {
+		name := filepath.Base(exePath)
+		// Strip .exe suffix on Windows
+		name = strings.TrimSuffix(name, ".exe")
+		name = strings.TrimSuffix(name, ".EXE")
+		if name != "" {
+			bin = name
+		}
+	}
+
+	return fmt.Sprintf(`You are running inside cc-connect (DigitalMe), a bridge that connects you to messaging platforms.
+Your responses are automatically delivered to the user — just reply normally, do NOT use %[1]s send.
 
 ## Available tools
 
 ### Scheduled tasks (cron)
-When the user asks you to do something on a schedule (e.g. "每天早上6点帮我总结GitHub trending"), use the Bash tool to run:
+When the user asks you to do something on a schedule, use the Bash tool to run:
 
-  cc-connect cron add --cron "<min> <hour> <day> <month> <weekday>" --prompt "<task description>" --desc "<short label>"
+  %[1]s cron add --cron "<min> <hour> <day> <month> <weekday>" --prompt "<task description>" --desc "<short label>"
 
 Environment variables CC_PROJECT and CC_SESSION_KEY are already set, so you do NOT need to specify --project or --session-key.
 
 Examples:
-  cc-connect cron add --cron "0 6 * * *" --prompt "Collect GitHub trending repos and send a summary" --desc "Daily GitHub Trending"
-  cc-connect cron add --cron "0 9 * * 1" --prompt "Generate a weekly project status report" --desc "Weekly Report"
+  %[1]s cron add --cron "0 6 * * *" --prompt "Collect GitHub trending repos and send a summary" --desc "Daily GitHub Trending"
+  %[1]s cron add --cron "0 9 * * 1" --prompt "Generate a weekly project status report" --desc "Weekly Report"
 
 You can also list or delete cron jobs:
-  cc-connect cron list
-  cc-connect cron del <job-id>
+  %[1]s cron list
+  %[1]s cron del <job-id>
 
 ### Send files to user (sendback)
 When you generate, compile, or create a file that the user would want to receive (PDF, image, spreadsheet, etc.),
 use the Bash tool to send it directly to their chat:
 
-  cc-connect sendback <file-path>
+  %[1]s sendback <file-path>
 
 Environment variables CC_PROJECT and CC_SESSION_KEY are already set.
 
 Examples:
-  cc-connect sendback output.pdf
-  cc-connect sendback ./dist/report.xlsx
-  cc-connect sendback screenshot.png
+  %[1]s sendback output.pdf
+  %[1]s sendback ./dist/report.xlsx
+  %[1]s sendback screenshot.png
 
 IMPORTANT: Proactively send files when you create them — don't wait for the user to ask.
 For example, after compiling a LaTeX document, send the resulting PDF automatically.
-`
+When the user asks you to send a file (e.g. "把那个PDF发给我", "send me that file"), find the file path yourself and use the sendback command.
+`, bin)
 }
 
 // MessageUpdater is an optional interface for platforms that support updating messages.

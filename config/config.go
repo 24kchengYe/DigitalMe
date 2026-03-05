@@ -64,8 +64,9 @@ type SpeechConfig struct {
 		Model  string `toml:"model"`
 	} `toml:"groq"`
 	Local struct {
-		ExePath   string `toml:"exe_path"`   // path to whisper-cli executable
-		ModelPath string `toml:"model_path"` // path to ggml model file
+		ExePath    string `toml:"exe_path"`    // path to whisper-cli executable
+		ModelPath  string `toml:"model_path"`  // path to ggml model file
+		FFmpegPath string `toml:"ffmpeg_path"` // optional: explicit path to ffmpeg executable
 	} `toml:"local"`
 }
 

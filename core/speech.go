@@ -132,7 +132,7 @@ func (w *LocalWhisper) Transcribe(ctx context.Context, audio []byte, format stri
 
 	// Convert to WAV 16kHz mono (whisper.cpp requirement)
 	wavFile := filepath.Join(tmpDir, "digitalme_stt_input.wav")
-	ffmpegPath, err := exec.LookPath("ffmpeg")
+	ffmpegPath, err := FindFFmpeg()
 	if err != nil {
 		return "", fmt.Errorf("local whisper: ffmpeg required for audio conversion: %w", err)
 	}
@@ -189,9 +189,9 @@ func (w *LocalWhisper) Transcribe(ctx context.Context, audio []byte, format stri
 // ConvertAudioToMP3 uses ffmpeg to convert audio from unsupported formats to mp3.
 // Returns the mp3 bytes. If ffmpeg is not installed, returns an error.
 func ConvertAudioToMP3(audio []byte, srcFormat string) ([]byte, error) {
-	ffmpegPath, err := exec.LookPath("ffmpeg")
+	ffmpegPath, err := FindFFmpeg()
 	if err != nil {
-		return nil, fmt.Errorf("ffmpeg not found in PATH: install ffmpeg to enable voice message support")
+		return nil, fmt.Errorf("ffmpeg not found: install ffmpeg or set ffmpeg_path in [speech.local] config")
 	}
 
 	cmd := exec.Command(ffmpegPath,
@@ -246,9 +246,49 @@ func NeedsConversion(format string) bool {
 	}
 }
 
+// ffmpegOverride stores an explicit ffmpeg path from config. Set at startup.
+var ffmpegOverride string
+
+// SetFFmpegPath sets an explicit path to the ffmpeg executable (from config).
+func SetFFmpegPath(path string) {
+	ffmpegOverride = path
+}
+
+// FindFFmpeg locates the ffmpeg executable. It checks:
+// 1. Explicit config path (ffmpeg_path in config.toml)
+// 2. PATH (exec.LookPath)
+// 3. Common Windows install locations
+func FindFFmpeg() (string, error) {
+	// 1. Explicit config path
+	if ffmpegOverride != "" {
+		if _, err := os.Stat(ffmpegOverride); err == nil {
+			return ffmpegOverride, nil
+		}
+	}
+
+	// 2. Standard PATH lookup
+	if p, err := exec.LookPath("ffmpeg"); err == nil {
+		return p, nil
+	}
+
+	// 3. Common Windows locations
+	for _, candidate := range []string{
+		`D:\ffmpeg\ffmpeg.exe`,
+		`D:\ffmpeg\bin\ffmpeg.exe`,
+		`C:\ffmpeg\ffmpeg.exe`,
+		`C:\ffmpeg\bin\ffmpeg.exe`,
+	} {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("ffmpeg not found: install ffmpeg or set ffmpeg_path in [speech.local] config")
+}
+
 // HasFFmpeg checks if ffmpeg is available.
 func HasFFmpeg() bool {
-	_, err := exec.LookPath("ffmpeg")
+	_, err := FindFFmpeg()
 	return err == nil
 }
 

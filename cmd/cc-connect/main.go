@@ -268,6 +268,9 @@ func main() {
 				if exePath == "" {
 					exePath = "whisper-cli"
 				}
+				if cfg.Speech.Local.FFmpegPath != "" {
+					core.SetFFmpegPath(cfg.Speech.Local.FFmpegPath)
+				}
 				if modelPath == "" {
 					slog.Warn("speech: local provider enabled but model_path is empty")
 				} else {

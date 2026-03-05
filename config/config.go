@@ -25,6 +25,8 @@ type Config struct {
 	Language    string          `toml:"language"` // "en" or "zh", default is "en"
 	Speech      SpeechConfig    `toml:"speech"`
 	Display     DisplayConfig   `toml:"display"`
+	WebUI       WebUIConfig     `toml:"webui"`
+	Idle        IdleConfig      `toml:"idle"`
 	Quiet       *bool           `toml:"quiet,omitempty"` // global default for quiet mode; project-level overrides this
 }
 
@@ -32,6 +34,19 @@ type Config struct {
 type DisplayConfig struct {
 	ThinkingMaxLen  *int `toml:"thinking_max_len"`    // max chars for thinking messages; 0 = no truncation; default 300
 	ToolMaxLen      *int `toml:"tool_max_len"`        // max chars for tool use messages; 0 = no truncation; default 500
+}
+
+// WebUIConfig configures the web status dashboard.
+type WebUIConfig struct {
+	Enabled           bool   `toml:"enabled"`
+	Addr              string `toml:"addr"`               // e.g. "0.0.0.0:9315"
+	HeartbeatInterval int    `toml:"heartbeat_interval"` // seconds, default 30
+}
+
+// IdleConfig configures the idle reminder feature.
+type IdleConfig struct {
+	Enabled      bool `toml:"enabled"`
+	IdleMinutes  int  `toml:"idle_minutes"` // minutes before sending reminder, default 30
 }
 
 // SpeechConfig configures speech-to-text for voice messages.

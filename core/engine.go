@@ -136,7 +136,8 @@ type Engine struct {
 	aliases  map[string]string // trigger → command (e.g. "帮助" → "/help")
 	aliasMu  sync.RWMutex
 
-	aliasSaveAddFunc func(name, command string) error
+	aliasSaveAddFunc   func(name, command string) error
+	idleActivityFunc   func(sessionKey string) // called on every message to record activity
 	aliasSaveDelFunc func(name string) error
 
 	bannedWords []string
@@ -281,6 +282,11 @@ func (e *Engine) AddAlias(name, command string) {
 	e.aliasMu.Lock()
 	defer e.aliasMu.Unlock()
 	e.aliases[name] = command
+}
+
+// SetIdleActivityFunc sets a callback that is invoked on every incoming message.
+func (e *Engine) SetIdleActivityFunc(fn func(sessionKey string)) {
+	e.idleActivityFunc = fn
 }
 
 func (e *Engine) SetAliasSaveAddFunc(fn func(name, command string) error) {
@@ -480,6 +486,11 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 	if msg.Audio != nil {
 		e.handleVoiceMessage(p, msg)
 		return
+	}
+
+	// Record activity for idle reminder
+	if e.idleActivityFunc != nil && msg.SessionKey != "" {
+		e.idleActivityFunc(msg.SessionKey)
 	}
 
 	content := strings.TrimSpace(msg.Content)

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/chenhg5/cc-connect/config"
 	"github.com/chenhg5/cc-connect/core"
@@ -347,6 +348,54 @@ func main() {
 		apiSrv.Start()
 	}
 
+	// Start idle reminder
+	var idleReminder *core.IdleReminder
+	if cfg.Idle.Enabled {
+		idleMinutes := cfg.Idle.IdleMinutes
+		if idleMinutes <= 0 {
+			idleMinutes = 30
+		}
+		idleReminder = core.NewIdleReminder(idleMinutes)
+		for i, e := range engines {
+			idleReminder.RegisterEngine(cfg.Projects[i].Name, e)
+			e.SetIdleActivityFunc(func(sessionKey string) {
+				idleReminder.RecordActivity(sessionKey)
+			})
+		}
+		idleReminder.Start()
+	}
+
+	// Start heartbeat monitor and web UI
+	var hbMonitor *core.HeartbeatMonitor
+	var webUI *core.WebUIServer
+
+	if cfg.WebUI.Enabled {
+		interval := 30
+		if cfg.WebUI.HeartbeatInterval > 0 {
+			interval = cfg.WebUI.HeartbeatInterval
+		}
+		hbMonitor = core.NewHeartbeatMonitor(time.Duration(interval) * time.Second)
+		for i, e := range engines {
+			hbMonitor.RegisterEngine(cfg.Projects[i].Name, e)
+		}
+		hbMonitor.Start()
+
+		addr := cfg.WebUI.Addr
+		if addr == "" {
+			addr = "127.0.0.1:9315"
+		}
+		var webErr error
+		webUI, webErr = core.NewWebUIServer(addr, hbMonitor, idleReminder)
+		if webErr != nil {
+			slog.Warn("webui server unavailable", "error", webErr)
+		} else {
+			for i, e := range engines {
+				webUI.RegisterEngine(cfg.Projects[i].Name, e)
+			}
+			webUI.Start()
+		}
+	}
+
 	slog.Info("cc-connect is running", "projects", len(engines))
 
 	// After startup, check if we were restarted and send success notification
@@ -369,6 +418,15 @@ func main() {
 	}
 
 	slog.Info("shutting down...")
+	if idleReminder != nil {
+		idleReminder.Stop()
+	}
+	if hbMonitor != nil {
+		hbMonitor.Stop()
+	}
+	if webUI != nil {
+		webUI.Stop()
+	}
 	if cronSched != nil {
 		cronSched.Stop()
 	}

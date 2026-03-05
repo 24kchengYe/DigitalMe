@@ -1,90 +1,116 @@
-# cc-connect-enhanced
+<div align="center">
 
-> **cc-connect on steroids** — Web UI monitoring, heartbeat health checks, and idle session reminders.
+# DigitalMe
 
-Based on [chenhg5/cc-connect](https://github.com/chenhg5/cc-connect), this fork adds features for **production monitoring and user engagement**.
+### Your AI Coding Agent, Always On, Anywhere.
+
+Control **Claude Code** from your phone via chat. Real-time dashboard. Heartbeat monitoring. Zero downtime.
+
+[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-7c3aed?style=flat-square&logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+
+[Features](#features) · [Quick Start](#quick-start) · [Dashboard](#dashboard) · [Configuration](#configuration) · [API](#rest-api)
+
+</div>
+
+---
+
+## Why DigitalMe?
+
+You've seen [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — the most powerful AI coding agent. You've seen [OpenClaw](https://github.com/anthropics/claw) — the web-based interface. But what if you want to **command Claude Code from anywhere** — your phone, your tablet, on the subway — through the chat app you already use?
+
+**DigitalMe** bridges the gap. It keeps a persistent Claude Code session alive and connects it to **8 messaging platforms** including Feishu, Telegram, Slack, and Discord. No more SSH-ing into your machine. No more VPN. Just open your chat app and start coding.
 
 ```
-                    ┌─────────────────────────────┐
-                    │    Web Dashboard (:9315)     │
-                    │  ┌───────────────────────┐  │
-                    │  │ ✓ All Systems Online  │  │
-                    │  │ Uptime: 3d 12h        │  │
-                    │  │ Sessions: 2           │  │
-                    │  │ ♥♥♥♥♥♥♥♥♥♥ Heartbeat │  │
-                    │  └───────────────────────┘  │
-                    └──────────┬──────────────────┘
-                               │
-  Phone/Tablet ──► Feishu ──► cc-connect ──► Claude Code
-                               │
-                    ┌──────────┴──────────────────┐
-                    │  💤 Idle 30min? Auto-remind  │
-                    └─────────────────────────────┘
+  ╔══════════════════════════════════════════════════════════════╗
+  ║                                                              ║
+  ║   📱 Phone/Tablet                                            ║
+  ║     │                                                        ║
+  ║     ▼                                                        ║
+  ║   💬 Feishu / Telegram / Slack / Discord / ...               ║
+  ║     │                                                        ║
+  ║     ▼                          ┌──────────────────────┐      ║
+  ║   ⚡ DigitalMe ──────────────► │  🖥️ Web Dashboard    │      ║
+  ║     │                          │  Heartbeat ♥♥♥♥♥♥♥  │      ║
+  ║     │                          │  Sessions: 3        │      ║
+  ║     │                          │  Uptime: 7d 14h     │      ║
+  ║     ▼                          └──────────────────────┘      ║
+  ║   🤖 Claude Code / Codex / Gemini CLI / Cursor               ║
+  ║     │                                                        ║
+  ║     ▼                                                        ║
+  ║   📂 Your Codebase                                           ║
+  ║                                                              ║
+  ╚══════════════════════════════════════════════════════════════╝
 ```
 
-## New Features
+## Features
 
-### 1. Web UI Dashboard
+### Core
 
-Real-time status dashboard accessible from any browser.
+- **6 AI Agents** — Claude Code, Codex, Cursor, Gemini CLI, Qoder, OpenCode
+- **8 Chat Platforms** — Feishu, DingTalk, Telegram, Slack, Discord, LINE, WeChat Work, QQ
+- **Persistent Sessions** — Claude Code process stays alive, no cold-start per message
+- **Multi-session** — multiple conversations per user, switch freely with `/list` and `/switch`
+- **Slash Commands** — `/new`, `/model`, `/mode`, `/stop`, `/help`, and more
+- **Permission Modes** — default, acceptEdits, plan-only, YOLO
+- **Voice & Images** — speech-to-text, screenshot analysis via multimodal support
+- **Scheduled Tasks** — cron jobs described in natural language
+- **Provider Management** — multiple API keys, switch models at runtime
 
-- **System status** — healthy / degraded / unhealthy at a glance
-- **Engine overview** — agent type, platforms, active sessions, uptime
-- **Session activity** — last message time, idle duration per session
-- **Heartbeat history** — visual strip of health check results
-- **Auto-refresh** — updates every 8 seconds
+### Monitoring & Reliability (DigitalMe Enhanced)
 
-Access at `http://<your-ip>:9315` — works from phone too!
+- **Real-time Dashboard** — dark-themed glassmorphism UI, accessible from any browser
+- **Heartbeat Monitor** — periodic health checks with visual history strip
+- **Idle Session Reminder** — auto-reminds users when sessions go idle, repeating until response
+- **Smart Status Detection** — heartbeat degrades to warning when idle reminders get no response
+- **REST API** — query system status, engine health, session activity programmatically
 
-### 2. Heartbeat Monitor
+## Dashboard
 
-Periodic health checks running in the background.
+The built-in web dashboard provides real-time visibility into your DigitalMe instance:
 
-- Checks every 30 seconds (configurable)
-- Tracks active session count over time
-- Stores last 100 check results
-- Feeds data to Web UI and REST API
-
-### 3. Idle Session Reminder
-
-Proactively reminds users when their session has been idle.
-
-- Sends a Feishu/chat message after N minutes of inactivity
-- Configurable threshold (default: 30 minutes)
-- Only reminds once per idle period — won't spam
-- Resets when user sends a new message
+- **System Status** — healthy / degraded / unhealthy at a glance
+- **KPI Cards** — uptime, active projects, session count, version
+- **Engine Table** — agent type, connected platforms, session count per engine
+- **Session Activity** — per-session last message time and idle duration
+- **Heartbeat Strip** — visual bar chart of health checks (green = active, amber = idle warning, red = down)
+- **Auto-refresh** — updates every 6 seconds
 
 ## Quick Start
 
 ### Prerequisites
 
-- [Go 1.22+](https://go.dev/dl/) installed
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (or other supported agents) configured
-- A messaging platform bot (Feishu, Telegram, Slack, etc.) set up
+- [Go 1.22+](https://go.dev/dl/)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+- A messaging platform bot configured (e.g., Feishu, Telegram)
 
 ### Build
 
 ```bash
-git clone https://github.com/24kchengYe/cc-connect-enhanced.git
-cd cc-connect-enhanced
-go build -o cc-connect.exe ./cmd/cc-connect/
+git clone https://github.com/24kchengYe/DigitalMe.git
+cd DigitalMe
+go build -o digitalme ./cmd/cc-connect/
 ```
 
 ### Configure
 
-Edit `~/.cc-connect/config.toml`:
+Create `~/.cc-connect/config.toml`:
 
 ```toml
+language = "en"          # "en", "zh", "ja", "es"
+
 [[projects]]
 name = "my-project"
 
 [projects.agent]
-type = "claudecode"
+type = "claudecode"      # or "codex", "cursor", "gemini", "qoder", "opencode"
 
 [projects.agent.options]
 work_dir = "/path/to/your/project"
-mode = "default"
+mode = "default"         # "default", "acceptEdits", "plan", "bypassPermissions"
 
+# Pick your platform (at least one)
 [[projects.platforms]]
 type = "feishu"
 
@@ -92,55 +118,72 @@ type = "feishu"
 app_id = "your-app-id"
 app_secret = "your-app-secret"
 
-# ── Enhanced Features ──
+# ── Monitoring ──
 
 [webui]
 enabled = true
-addr = "0.0.0.0:9315"        # "127.0.0.1:9315" for local only
-heartbeat_interval = 30       # seconds
+addr = "0.0.0.0:9315"
+heartbeat_interval = 30   # seconds
 
 [idle]
 enabled = true
-idle_minutes = 30             # remind after 30 min idle
+idle_minutes = 30          # remind after N minutes idle
 ```
 
 ### Run
 
 ```bash
-./cc-connect.exe
+./digitalme
 ```
 
-Open `http://localhost:9315` to see the dashboard.
+Open `http://localhost:9315` for the dashboard.
 
 ## REST API
 
 | Endpoint | Description |
-|----------|-------------|
-| `GET /api/status` | Overall system status, version, uptime |
-| `GET /api/engines` | List engines with agent type, platforms, sessions |
-| `GET /api/heartbeat` | Heartbeat history (last 100 checks) |
-| `GET /api/activity` | Session activity and idle times |
+|---|---|
+| `GET /api/status` | System health, version, uptime, OS info |
+| `GET /api/engines` | Engine list with agent type, platforms, sessions |
+| `GET /api/heartbeat` | Last 100 heartbeat check records |
+| `GET /api/activity` | Session activity with idle times |
 
-## All cc-connect Features (inherited)
+## Comparison
 
-This fork includes **everything** from the original cc-connect:
+| Feature | Claude Code CLI | OpenClaw | DigitalMe |
+|---|---|---|---|
+| AI coding agent | Yes | Yes | Yes (6 agents) |
+| Web UI | No | Yes | Yes (dark theme) |
+| Mobile access via chat | No | No | **Yes (8 platforms)** |
+| Persistent sessions | Yes | Yes | Yes |
+| Heartbeat monitoring | No | No | **Yes** |
+| Idle reminders | No | No | **Yes** |
+| Multi-platform chat | No | No | **Yes** |
+| Self-hosted | Yes | Cloud | **Yes** |
 
-- **6 AI Agents** — Claude Code, Codex, Cursor, Gemini CLI, Qoder, OpenCode
-- **8 Chat Platforms** — Feishu, DingTalk, Telegram, Slack, Discord, LINE, WeChat Work, QQ
-- **Slash commands** — `/new`, `/list`, `/switch`, `/model`, `/mode`, `/stop`, `/help`, etc.
-- **Session management** — multiple sessions per user, history, persistence
-- **Permission control** — default, acceptEdits, plan, YOLO modes
-- **Voice & images** — speech-to-text, multimodal support
-- **Scheduled tasks** — cron jobs via natural language
-- **Provider management** — multiple API keys, runtime switching
-- **Daemon mode** — systemd / launchd integration
+## Slash Commands
 
-See [original README](https://github.com/chenhg5/cc-connect) for full documentation.
+| Command | Description |
+|---|---|
+| `/new` | Start a new session |
+| `/list` | List all sessions |
+| `/switch <id>` | Switch to a session |
+| `/stop` | Stop the current agent process |
+| `/model <name>` | Change the AI model |
+| `/mode <mode>` | Change permission mode |
+| `/version` | Show version info |
+| `/help` | Show all commands |
+
+## Tech Stack
+
+- **Language**: Go 1.22+
+- **Agent SDK**: Claude Code CLI, Codex CLI, Cursor, Gemini CLI
+- **Platforms**: Feishu SDK (WebSocket), Telegram Bot API, Slack API, Discord Gateway, and more
+- **Dashboard**: Embedded HTML with glassmorphism CSS, vanilla JS, REST API backend
+- **Storage**: SQLite-based session persistence
 
 ## Credits
 
-- [chenhg5/cc-connect](https://github.com/chenhg5/cc-connect) — the original project
-- Enhanced features by [@24kchengYe](https://github.com/24kchengYe)
+Built on top of the excellent [cc-connect](https://github.com/chenhg5/cc-connect) multi-agent platform. Enhanced with monitoring, dashboard, and reliability features.
 
 ## License
 

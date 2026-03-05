@@ -1,6 +1,7 @@
 package feishu
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -332,6 +333,50 @@ func (p *Platform) Send(ctx context.Context, rctx any, content string) error {
 	if !resp.Success() {
 		return fmt.Errorf("feishu: send failed code=%d msg=%s", resp.Code, resp.Msg)
 	}
+	return nil
+}
+
+// SendImage uploads image data to Feishu and sends it as an image message.
+func (p *Platform) SendImage(ctx context.Context, rctx any, imageData []byte) error {
+	rc, ok := rctx.(replyContext)
+	if !ok {
+		return fmt.Errorf("feishu: invalid reply context type %T", rctx)
+	}
+
+	// Upload image to Feishu
+	uploadResp, err := p.client.Im.Image.Create(ctx, larkim.NewCreateImageReqBuilder().
+		Body(larkim.NewCreateImageReqBodyBuilder().
+			ImageType("message").
+			Image(bytes.NewReader(imageData)).
+			Build()).
+		Build())
+	if err != nil {
+		return fmt.Errorf("feishu: upload image: %w", err)
+	}
+	if !uploadResp.Success() {
+		return fmt.Errorf("feishu: upload image code=%d msg=%s", uploadResp.Code, uploadResp.Msg)
+	}
+
+	imageKey := *uploadResp.Data.ImageKey
+	content := "{\"image_key\":\"" + imageKey + "\"}"
+
+	// Send image message
+	sendResp, err := p.client.Im.Message.Create(ctx, larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(larkim.ReceiveIdTypeChatId).
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(rc.chatID).
+			MsgType("image").
+			Content(content).
+			Build()).
+		Build())
+	if err != nil {
+		return fmt.Errorf("feishu: send image: %w", err)
+	}
+	if !sendResp.Success() {
+		return fmt.Errorf("feishu: send image code=%d msg=%s", sendResp.Code, sendResp.Msg)
+	}
+
+	slog.Info("feishu: screenshot sent", "image_key", imageKey)
 	return nil
 }
 

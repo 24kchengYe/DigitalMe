@@ -14,6 +14,11 @@ type Platform interface {
 	Stop() error
 }
 
+// ImageSender is an optional interface for platforms that can send image messages.
+type ImageSender interface {
+	SendImage(ctx context.Context, replyCtx any, imageData []byte) error
+}
+
 // ErrNotSupported indicates a platform doesn't support a particular operation.
 var ErrNotSupported = errors.New("operation not supported by this platform")
 

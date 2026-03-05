@@ -1010,6 +1010,7 @@ var builtinCommands = []struct {
 	{[]string{"restart"}, "restart"},
 	{[]string{"alias"}, "alias"},
 	{[]string{"delete", "del", "rm"}, "delete"},
+	{[]string{"screenshot", "ss", "screen"}, "screenshot"},
 }
 
 // matchPrefix finds a unique command matching the given prefix.
@@ -1131,6 +1132,8 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 		e.cmdAlias(p, msg, args)
 	case "delete":
 		e.cmdDelete(p, msg, args)
+	case "screenshot":
+		e.cmdScreenshot(p, msg)
 	default:
 		if custom, ok := e.commands.Resolve(cmd); ok {
 			e.executeCustomCommand(p, msg, custom, args)
@@ -2622,6 +2625,27 @@ func (e *Engine) cmdConfig(p Platform, msg *Message, args []string) {
 }
 
 // ── /doctor command ─────────────────────────────────────────
+
+func (e *Engine) cmdScreenshot(p Platform, msg *Message) {
+	imgSender, ok := p.(ImageSender)
+	if !ok {
+		e.reply(p, msg.ReplyCtx, "This platform does not support sending images.")
+		return
+	}
+
+	e.reply(p, msg.ReplyCtx, "Capturing screen...")
+
+	data, err := CaptureScreen()
+	if err != nil {
+		e.reply(p, msg.ReplyCtx, "Screenshot failed: "+err.Error())
+		return
+	}
+
+	if err := imgSender.SendImage(e.ctx, msg.ReplyCtx, data); err != nil {
+		e.reply(p, msg.ReplyCtx, "Failed to send screenshot: "+err.Error())
+		return
+	}
+}
 
 func (e *Engine) cmdDoctor(p Platform, msg *Message) {
 	results := RunDoctorChecks(e.ctx, e.agent, e.platforms)

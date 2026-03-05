@@ -602,6 +602,8 @@ func (e *Engine) handlePendingPermission(p Platform, msg *Message, content strin
 	}
 
 	lower := strings.ToLower(strings.TrimSpace(content))
+	// Strip trailing punctuation that speech-to-text may add (e.g. "允许。", "好的,")
+	lower = strings.TrimRight(lower, ".,;!?。，；！？、")
 
 	if isApproveAllResponse(lower) {
 		state.mu.Lock()
@@ -652,6 +654,8 @@ func isApproveAllResponse(s string) bool {
 	for _, w := range []string{
 		"allow all", "allowall", "approve all", "yes all",
 		"允许所有", "允许全部", "全部允许", "所有允许", "都允许", "全部同意",
+		// Traditional Chinese variants (whisper.cpp may output traditional)
+		"允許所有", "允許全部", "全部允許", "所有允許", "都允許", "全部同意",
 	} {
 		if s == w {
 			return true
@@ -661,7 +665,12 @@ func isApproveAllResponse(s string) bool {
 }
 
 func isAllowResponse(s string) bool {
-	for _, w := range []string{"allow", "yes", "y", "ok", "允许", "同意", "可以", "好", "好的", "是", "确认", "approve"} {
+	for _, w := range []string{
+		"allow", "yes", "y", "ok", "approve",
+		"允许", "同意", "可以", "好", "好的", "是", "确认",
+		// Traditional Chinese variants
+		"允許", "確認", "同意", "可以",
+	} {
 		if s == w {
 			return true
 		}
@@ -670,7 +679,12 @@ func isAllowResponse(s string) bool {
 }
 
 func isDenyResponse(s string) bool {
-	for _, w := range []string{"deny", "no", "n", "reject", "拒绝", "不允许", "不行", "不", "否", "取消", "cancel"} {
+	for _, w := range []string{
+		"deny", "no", "n", "reject", "cancel",
+		"拒绝", "不允许", "不行", "不", "否", "取消",
+		// Traditional Chinese variants
+		"拒絕", "不允許", "取消",
+	} {
 		if s == w {
 			return true
 		}

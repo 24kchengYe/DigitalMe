@@ -1,40 +1,22 @@
 package licensing
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
+	"crypto/ed25519"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 )
 
-// Obfuscated signing key: actual = maskedKey XOR keyMask.
-// This prevents extraction via `strings` on the compiled binary.
-var (
-	maskedKey = [32]byte{
-		0x03, 0x38, 0x85, 0x61, 0x12, 0x6d, 0x86, 0xe8,
-		0xcf, 0xa6, 0xc5, 0xb6, 0x80, 0x1f, 0x13, 0x86,
-		0x1f, 0xf2, 0xf8, 0xc9, 0x0b, 0xe5, 0x22, 0x22,
-		0x30, 0x15, 0x07, 0x76, 0x6c, 0xc8, 0x4e, 0xfa,
-	}
-	keyMask = [32]byte{
-		0xd7, 0x63, 0x0f, 0x96, 0x31, 0xac, 0xe8, 0x75,
-		0x80, 0x1e, 0xc7, 0x53, 0xfa, 0x29, 0xb2, 0x4d,
-		0x06, 0x7f, 0x9c, 0x3b, 0xa5, 0xd2, 0x27, 0xea,
-		0x61, 0xf3, 0xbe, 0x49, 0x1c, 0x84, 0xc0, 0x58,
-	}
-)
-
-// recoverKey XORs maskedKey with keyMask to produce the actual HMAC signing key.
-func recoverKey() []byte {
-	key := make([]byte, 32)
-	for i := 0; i < 32; i++ {
-		key[i] = maskedKey[i] ^ keyMask[i]
-	}
-	return key
+// Ed25519 public key for license verification.
+// This is SAFE to publish — it can only verify signatures, not create them.
+// The corresponding private key is kept by the project owner.
+var publicKey = ed25519.PublicKey{
+	0x51, 0xbe, 0xa7, 0x9a, 0x27, 0x15, 0x53, 0x7c,
+	0x08, 0x51, 0x96, 0x21, 0x0c, 0xbc, 0xbe, 0x6b,
+	0x64, 0x1d, 0xb1, 0x29, 0xfd, 0x8e, 0x78, 0x3b,
+	0xa2, 0x75, 0x68, 0x2c, 0xfa, 0xf2, 0x1d, 0xef,
 }
 
 // Payload represents the license data embedded in a key.
@@ -63,9 +45,9 @@ func (p *Payload) IsExpired() bool {
 }
 
 // verifyKey validates a license key string and returns the decoded payload.
-// Key format: base64(jsonPayload + "." + hex(hmacSHA256(jsonPayload)))
+// Key format: base64(jsonPayload + "." + base64(ed25519Signature))
 func verifyKey(keyStr string) (*Payload, error) {
-	// Try standard base64, then URL-safe
+	// Decode outer base64
 	raw, err := base64.StdEncoding.DecodeString(keyStr)
 	if err != nil {
 		raw, err = base64.RawStdEncoding.DecodeString(keyStr)
@@ -80,6 +62,7 @@ func verifyKey(keyStr string) (*Payload, error) {
 		}
 	}
 
+	// Split at last "." — JSON payload may contain dots (emails, dates)
 	rawStr := string(raw)
 	lastDot := strings.LastIndex(rawStr, ".")
 	if lastDot < 0 || lastDot >= len(rawStr)-1 {
@@ -87,20 +70,16 @@ func verifyKey(keyStr string) (*Payload, error) {
 	}
 
 	jsonData := []byte(rawStr[:lastDot])
-	sigHex := rawStr[lastDot+1:]
+	sigB64 := rawStr[lastDot+1:]
 
-	sig, err := hex.DecodeString(sigHex)
+	// Decode signature from base64
+	sig, err := base64.RawURLEncoding.DecodeString(sigB64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid signature encoding")
 	}
 
-	// Verify HMAC-SHA256
-	secret := recoverKey()
-	mac := hmac.New(sha256.New, secret)
-	mac.Write(jsonData)
-	expected := mac.Sum(nil)
-
-	if !hmac.Equal(sig, expected) {
+	// Verify Ed25519 signature with embedded public key
+	if !ed25519.Verify(publicKey, jsonData, sig) {
 		return nil, fmt.Errorf("invalid signature")
 	}
 
@@ -110,11 +89,4 @@ func verifyKey(keyStr string) (*Payload, error) {
 	}
 
 	return &payload, nil
-}
-
-// signPayload creates an HMAC-SHA256 signature for the given JSON data.
-func signPayload(jsonData, secret []byte) string {
-	mac := hmac.New(sha256.New, secret)
-	mac.Write(jsonData)
-	return hex.EncodeToString(mac.Sum(nil))
 }

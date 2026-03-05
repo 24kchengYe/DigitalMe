@@ -37,12 +37,13 @@ type EngineStatus struct {
 
 // HeartbeatMonitor periodically checks engine health.
 type HeartbeatMonitor struct {
-	engines  map[string]*Engine
-	interval time.Duration
-	history  []HeartbeatRecord
-	mu       sync.RWMutex
-	stopCh   chan struct{}
-	maxHist  int
+	engines      map[string]*Engine
+	interval     time.Duration
+	history      []HeartbeatRecord
+	mu           sync.RWMutex
+	stopCh       chan struct{}
+	maxHist      int
+	idleReminder *IdleReminder
 }
 
 // NewHeartbeatMonitor creates a monitor with the given check interval.
@@ -61,6 +62,13 @@ func (hb *HeartbeatMonitor) RegisterEngine(name string, e *Engine) {
 	hb.mu.Lock()
 	defer hb.mu.Unlock()
 	hb.engines[name] = e
+}
+
+// SetIdleReminder links the idle reminder so heartbeat can detect unresponsive sessions.
+func (hb *HeartbeatMonitor) SetIdleReminder(ir *IdleReminder) {
+	hb.mu.Lock()
+	defer hb.mu.Unlock()
+	hb.idleReminder = ir
 }
 
 // Start begins periodic health checks.
@@ -99,6 +107,14 @@ func (hb *HeartbeatMonitor) check() {
 		count := len(e.interactiveStates)
 		e.interactiveMu.Unlock()
 		totalSessions += count
+	}
+
+	// If idle reminder has detected unresponsive sessions, degrade status
+	if hb.idleReminder != nil {
+		unresponsive := hb.idleReminder.UnresponsiveCount()
+		if unresponsive > 0 {
+			overallStatus = StatusDegraded
+		}
 	}
 
 	record := HeartbeatRecord{

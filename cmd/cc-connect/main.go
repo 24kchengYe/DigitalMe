@@ -378,6 +378,9 @@ func main() {
 		for i, e := range engines {
 			hbMonitor.RegisterEngine(cfg.Projects[i].Name, e)
 		}
+		if idleReminder != nil {
+			hbMonitor.SetIdleReminder(idleReminder)
+		}
 		hbMonitor.Start()
 
 		addr := cfg.WebUI.Addr

@@ -8,45 +8,43 @@ import (
 )
 
 // IdleReminder sends proactive messages when sessions are idle for too long.
+// It repeats the reminder every idleThreshold interval until the user responds.
 type IdleReminder struct {
 	engines       map[string]*Engine
 	idleThreshold time.Duration
 	checkInterval time.Duration
-	lastActivity  map[string]time.Time // sessionKey → last message time
-	reminded      map[string]bool      // sessionKey → already reminded
+	lastActivity  map[string]time.Time // sessionKey → last user message time
+	lastReminded  map[string]time.Time // sessionKey → last reminder sent time
 	mu            sync.Mutex
 	stopCh        chan struct{}
 }
 
 // NewIdleReminder creates an idle reminder.
-// idleMinutes: how many minutes of inactivity before sending a reminder.
 func NewIdleReminder(idleMinutes int) *IdleReminder {
 	return &IdleReminder{
 		engines:       make(map[string]*Engine),
 		idleThreshold: time.Duration(idleMinutes) * time.Minute,
-		checkInterval: 1 * time.Minute,
+		checkInterval: 30 * time.Second,
 		lastActivity:  make(map[string]time.Time),
-		reminded:      make(map[string]bool),
+		lastReminded:  make(map[string]time.Time),
 		stopCh:        make(chan struct{}),
 	}
 }
 
-// RegisterEngine adds an engine to monitor.
 func (ir *IdleReminder) RegisterEngine(name string, e *Engine) {
 	ir.mu.Lock()
 	defer ir.mu.Unlock()
 	ir.engines[name] = e
 }
 
-// RecordActivity marks a session as active (called when a message is received).
+// RecordActivity marks a session as active (called on every incoming message).
 func (ir *IdleReminder) RecordActivity(sessionKey string) {
 	ir.mu.Lock()
 	defer ir.mu.Unlock()
 	ir.lastActivity[sessionKey] = time.Now()
-	ir.reminded[sessionKey] = false
+	delete(ir.lastReminded, sessionKey) // reset reminder on new activity
 }
 
-// Start begins the idle check loop.
 func (ir *IdleReminder) Start() {
 	go func() {
 		ticker := time.NewTicker(ir.checkInterval)
@@ -63,7 +61,6 @@ func (ir *IdleReminder) Start() {
 	slog.Info("idle reminder started", "threshold", ir.idleThreshold)
 }
 
-// Stop halts the idle reminder.
 func (ir *IdleReminder) Stop() {
 	close(ir.stopCh)
 }
@@ -74,15 +71,19 @@ func (ir *IdleReminder) check() {
 
 	now := time.Now()
 	for sessionKey, lastTime := range ir.lastActivity {
-		if ir.reminded[sessionKey] {
-			continue
-		}
-		if now.Sub(lastTime) < ir.idleThreshold {
+		idle := now.Sub(lastTime)
+		if idle < ir.idleThreshold {
 			continue
 		}
 
-		// Session is idle, send reminder
-		ir.reminded[sessionKey] = true
+		// Check if we already reminded recently (within one threshold period)
+		if lr, ok := ir.lastReminded[sessionKey]; ok {
+			if now.Sub(lr) < ir.idleThreshold {
+				continue
+			}
+		}
+
+		ir.lastReminded[sessionKey] = now
 		go ir.sendReminder(sessionKey)
 	}
 }
@@ -95,17 +96,15 @@ func (ir *IdleReminder) sendReminder(sessionKey string) {
 	}
 	ir.mu.Unlock()
 
-	msg := "💤 检测到会话空闲中。需要我做什么吗？\n\n发送任意消息继续对话，或发送 /clear 开始新会话。"
+	msg := "💤 会话已空闲，随时可以发消息继续对话。\n\n发送 /clear 可开始新会话。"
 
 	for _, e := range engines {
-		err := e.SendToSession(sessionKey, msg)
-		if err == nil {
+		if err := e.SendToSession(sessionKey, msg); err == nil {
 			slog.Info("idle reminder sent", "session_key", sessionKey)
 			return
 		}
 	}
 
-	// If SendToSession failed (no active interactive state), try via platform
 	for _, e := range engines {
 		for _, p := range e.platforms {
 			rc, ok := p.(ReplyContextReconstructor)
@@ -123,10 +122,9 @@ func (ir *IdleReminder) sendReminder(sessionKey string) {
 		}
 	}
 
-	slog.Debug("idle reminder: no way to reach session", "session_key", sessionKey)
+	slog.Debug("idle reminder: could not reach session", "session_key", sessionKey)
 }
 
-// GetLastActivity returns the last activity time for a session.
 func (ir *IdleReminder) GetLastActivity(sessionKey string) (time.Time, bool) {
 	ir.mu.Lock()
 	defer ir.mu.Unlock()
@@ -134,7 +132,6 @@ func (ir *IdleReminder) GetLastActivity(sessionKey string) (time.Time, bool) {
 	return t, ok
 }
 
-// AllActivity returns a copy of all last activity times.
 func (ir *IdleReminder) AllActivity() map[string]time.Time {
 	ir.mu.Lock()
 	defer ir.mu.Unlock()
@@ -143,4 +140,20 @@ func (ir *IdleReminder) AllActivity() map[string]time.Time {
 		out[k] = v
 	}
 	return out
+}
+
+// UnresponsiveCount returns how many sessions have been reminded but haven't
+// responded yet (lastReminded exists and is after lastActivity).
+func (ir *IdleReminder) UnresponsiveCount() int {
+	ir.mu.Lock()
+	defer ir.mu.Unlock()
+	count := 0
+	for sessionKey, remindedAt := range ir.lastReminded {
+		if activityAt, ok := ir.lastActivity[sessionKey]; ok {
+			if remindedAt.After(activityAt) {
+				count++
+			}
+		}
+	}
+	return count
 }

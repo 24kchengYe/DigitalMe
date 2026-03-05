@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/chenhg5/cc-connect/licensing"
 )
 
 const maxPlatformMessageLen = 4000
@@ -543,6 +545,10 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 // ──────────────────────────────────────────────────────────────
 
 func (e *Engine) handleVoiceMessage(p Platform, msg *Message) {
+	if !licensing.IsFeatureEnabled(licensing.FeatureVoice) {
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgProFeatureRequired))
+		return
+	}
 	if !e.speech.Enabled || e.speech.STT == nil {
 		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgVoiceNotEnabled))
 		return
@@ -939,6 +945,9 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			session.AddHistory("assistant", fullResponse)
 			e.sessions.Save()
 
+			// Apply branding watermark
+			fullResponse = licensing.ApplyWatermark(fullResponse)
+
 			turnDuration := time.Since(turnStart)
 			slog.Info("turn complete",
 				"session", session.ID,
@@ -959,8 +968,8 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				slog.Warn("slow final reply send", "platform", p.Name(), "elapsed", elapsed, "response_len", len(fullResponse))
 			}
 
-			// Send task completion notification for significant work
-			if toolCount > 0 || turnDuration >= 30*time.Second {
+			// Send task completion notification for significant work (Pro feature)
+			if licensing.IsFeatureEnabled(licensing.FeatureTaskNotify) && (toolCount > 0 || turnDuration >= 30*time.Second) {
 				durationStr := turnDuration.Truncate(time.Second).String()
 				summary := fmt.Sprintf(e.i18n.T(MsgTaskComplete), toolCount, durationStr)
 				e.send(p, replyCtx, summary)
@@ -1129,6 +1138,10 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 	case "memory":
 		e.cmdMemory(p, msg, args)
 	case "cron":
+		if !licensing.IsFeatureEnabled(licensing.FeatureCron) {
+			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgProFeatureRequired))
+			return true
+		}
 		e.cmdCron(p, msg, args)
 	case "compress":
 		e.cmdCompress(p, msg)
@@ -1155,8 +1168,16 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 	case "delete":
 		e.cmdDelete(p, msg, args)
 	case "screenshot":
+		if !licensing.IsFeatureEnabled(licensing.FeatureScreenshot) {
+			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgProFeatureRequired))
+			return true
+		}
 		e.cmdScreenshot(p, msg)
 	case "sendback":
+		if !licensing.IsFeatureEnabled(licensing.FeatureFileSendback) {
+			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgProFeatureRequired))
+			return true
+		}
 		e.cmdSendback(p, msg, args)
 	default:
 		if custom, ok := e.commands.Resolve(cmd); ok {

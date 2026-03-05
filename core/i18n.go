@@ -283,6 +283,8 @@ const (
 	MsgBannedWordBlocked MsgKey = "banned_word_blocked"
 	MsgCommandDisabled   MsgKey = "command_disabled"
 
+	MsgProFeatureRequired MsgKey = "pro_feature_required"
+
 	MsgTaskComplete   MsgKey = "task_complete"
 	MsgSendUsage      MsgKey = "send_usage"
 	MsgSendNotFound   MsgKey = "send_not_found"
@@ -1548,6 +1550,13 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "🚫 命令 `%s` 在當前專案中已被停用。",
 		LangJapanese:           "🚫 コマンド `%s` はこのプロジェクトで無効化されています。",
 		LangSpanish:            "🚫 El comando `%s` está deshabilitado para este proyecto.",
+	},
+	MsgProFeatureRequired: {
+		LangEnglish:            "🔒 This feature requires a DigitalMe Pro license. Contact the author to upgrade.",
+		LangChinese:            "🔒 此功能需要 DigitalMe Pro 授权。请联系作者获取授权码。",
+		LangTraditionalChinese: "🔒 此功能需要 DigitalMe Pro 授權。請聯繫作者取得授權碼。",
+		LangJapanese:           "🔒 この機能は DigitalMe Pro ライセンスが必要です。アップグレードについてはお問い合わせください。",
+		LangSpanish:            "🔒 Esta función requiere una licencia DigitalMe Pro. Contacte al autor para actualizar.",
 	},
 	MsgTaskComplete: {
 		LangEnglish: "✅ Task complete | %d tools | %s",

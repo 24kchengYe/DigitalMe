@@ -1,0 +1,27 @@
+Business Source License 1.1
+
+Parameters
+
+Licensor:             DigitalMe Authors
+Licensed Work:        DigitalMe
+                      The Licensed Work is (c) 2025 DigitalMe Authors.
+Additional Use Grant: You may use the Licensed Work for personal,
+                      non-commercial, and educational purposes without
+                      a paid license. Commercial use requires a paid
+                      license from the Licensor.
+Change Date:          2030-01-01
+Change License:       Apache License, Version 2.0
+
+Branding Requirement: All versions of the Licensed Work, whether Free
+or Pro, must retain the DigitalMe branding, including but not limited
+to: startup banner, message watermarks, dashboard footer, and all
+visual brand identifiers. Removal or modification of branding elements
+is a violation of this License regardless of tier.
+
+Full license text: https://mariadb.com/bsl11/
+
+Summary:
+- Personal and non-commercial use: FREE
+- Commercial use: Paid license required
+- All versions must retain DigitalMe branding
+- After the Change Date, converts to Apache License 2.0

@@ -28,6 +28,12 @@ type Config struct {
 	WebUI       WebUIConfig     `toml:"webui"`
 	Idle        IdleConfig      `toml:"idle"`
 	Quiet       *bool           `toml:"quiet,omitempty"` // global default for quiet mode; project-level overrides this
+	License     LicenseConfig   `toml:"license"`
+}
+
+// LicenseConfig holds the license key for Pro features.
+type LicenseConfig struct {
+	Key string `toml:"key"`
 }
 
 // DisplayConfig controls how intermediate messages (thinking, tool output) are shown.

@@ -29,6 +29,16 @@
 # 可被项目级配置覆盖。用户仍可通过 /quiet 命令切换。
 # quiet = true
 
+# =============================================================================
+# License / 授权许可
+# =============================================================================
+# Pro license key unlocks advanced features: voice recognition, file sendback,
+# cron tasks, web dashboard, screenshot, task notifications.
+# Pro 授权码解锁高级功能：语音识别、文件回传、定时任务、Web仪表盘、截图、任务通知。
+# Contact the author to obtain a license key.
+# [license]
+# key = ""
+
 [log]
 level = "info" # debug, info, warn, error
 

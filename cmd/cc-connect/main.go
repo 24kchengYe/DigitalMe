@@ -18,6 +18,7 @@ import (
 	"github.com/chenhg5/cc-connect/config"
 	"github.com/chenhg5/cc-connect/core"
 	"github.com/chenhg5/cc-connect/daemon"
+	"github.com/chenhg5/cc-connect/licensing"
 
 	_ "github.com/chenhg5/cc-connect/agent/claudecode"
 	_ "github.com/chenhg5/cc-connect/agent/codex"
@@ -66,6 +67,9 @@ func main() {
 			return
 		case "daemon":
 			runDaemon(os.Args[2:])
+			return
+		case "license":
+			runLicenseCommand(os.Args[2:])
 			return
 		}
 	}
@@ -122,6 +126,13 @@ func main() {
 
 	config.ConfigPath = configPath
 	slog.Info("config loaded", "path", configPath)
+
+	// Initialize license system
+	if err := licensing.Init(cfg.License.Key); err != nil {
+		slog.Warn("license init warning", "error", err)
+	}
+	fmt.Print(licensing.StartupBanner())
+	licensing.StartPeriodicCheck(1 * time.Hour)
 
 	setupLogger(cfg.Log.Level, logWriter)
 
@@ -244,8 +255,8 @@ func main() {
 			engine.SetDefaultQuiet(*cfg.Quiet)
 		}
 
-		// Wire speech-to-text if enabled
-		if cfg.Speech.Enabled {
+		// Wire speech-to-text if enabled (requires Pro license)
+		if cfg.Speech.Enabled && licensing.IsFeatureEnabled(licensing.FeatureVoice) {
 			speechCfg := core.SpeechCfg{
 				Enabled:  true,
 				Language: cfg.Speech.Language,
@@ -324,13 +335,13 @@ func main() {
 		engines = append(engines, engine)
 	}
 
-	// Start cron scheduler
+	// Start cron scheduler (requires Pro license)
 	cronStore, err := core.NewCronStore(cfg.DataDir)
 	if err != nil {
 		slog.Warn("cron store unavailable", "error", err)
 	}
 	var cronSched *core.CronScheduler
-	if cronStore != nil {
+	if cronStore != nil && licensing.IsFeatureEnabled(licensing.FeatureCron) {
 		cronSched = core.NewCronScheduler(cronStore)
 		for i, e := range engines {
 			cronSched.RegisterEngine(cfg.Projects[i].Name, e)
@@ -386,7 +397,7 @@ func main() {
 	var hbMonitor *core.HeartbeatMonitor
 	var webUI *core.WebUIServer
 
-	if cfg.WebUI.Enabled {
+	if cfg.WebUI.Enabled && licensing.IsFeatureEnabled(licensing.FeatureWebDashboard) {
 		interval := 30
 		if cfg.WebUI.HeartbeatInterval > 0 {
 			interval = cfg.WebUI.HeartbeatInterval

@@ -8,7 +8,7 @@ Control **Claude Code** from your phone via chat. Real-time dashboard. Heartbeat
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-7c3aed?style=flat-square&logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/License-BSL_1.1-blue?style=flat-square)](LICENSE)
 
 [Features](#features) · [Quick Start](#quick-start) · [Dashboard](#dashboard) · [Configuration](#configuration) · [API](#rest-api)
 
@@ -355,4 +355,25 @@ Built on top of the excellent [cc-connect](https://github.com/chenhg5/cc-connect
 
 ## License
 
-MIT
+[BSL 1.1](LICENSE) (Business Source License)
+
+- **Personal / non-commercial use**: Free
+- **Commercial use**: Paid license required
+- **Branding**: All versions must retain DigitalMe branding (watermark, dashboard footer, startup banner)
+- **Change Date**: 2030-01-01 (converts to Apache 2.0)
+
+### Feature Tiers
+
+| Feature | Free | Pro |
+|---------|------|-----|
+| Text chat | Yes | Yes |
+| Multi-session /new /list /switch | Yes | Yes |
+| Permission handling | Yes | Yes |
+| Basic commands /model /mode /help | Yes | Yes |
+| Voice recognition | - | Yes |
+| /sendback file transfer | - | Yes |
+| /cron scheduled tasks | - | Yes |
+| Web Dashboard | - | Yes |
+| /screenshot | - | Yes |
+| Task completion notify | - | Yes |
+| Message watermark | Every 5 msgs | Every 5 msgs |

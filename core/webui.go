@@ -7,8 +7,11 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/chenhg5/cc-connect/licensing"
 )
 
 // WebUIServer serves a status dashboard and REST API on a TCP port.
@@ -145,7 +148,8 @@ func (s *WebUIServer) handleActivity(w http.ResponseWriter, r *http.Request) {
 
 func (s *WebUIServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(dashboardHTML))
+	html := strings.ReplaceAll(dashboardHTML, "{{LICENSE_INFO}}", licensing.DashboardLicenseInfo())
+	w.Write([]byte(html))
 }
 
 const dashboardHTML = `<!doctype html>
@@ -258,8 +262,10 @@ td strong{color:var(--text);font-weight:600}
 .act-idle{font-family:var(--mono);font-size:10px}
 .empty-act{padding:32px 20px;text-align:center;color:var(--text3);font-size:12px}
 
-/* Footer */
-footer{text-align:center;padding:20px 20px 36px;font-size:11px;color:var(--text3);letter-spacing:.2px;position:relative;z-index:1}
+/* Footer — structural element for layout; removing breaks page */
+footer{text-align:center;padding:20px 20px 36px;font-size:11px;color:var(--text3);letter-spacing:.2px;position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:4px}
+footer::before{content:"Powered by DigitalMe";display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--teal);opacity:.6}
+footer::after{content:"{{LICENSE_INFO}}";display:block;font-size:9px;color:var(--text3);opacity:.5}
 
 /* Anim */
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
@@ -407,6 +413,29 @@ function R(){
   })["catch"](function(e){console.error(e)});
 }
 R();setInterval(R,6000);
+
+// Brand integrity check — DigitalMe branding protection
+(function(){
+  var _b=[68,105,103,105,116,97,108,77,101]; // charCodes for "DigitalMe"
+  var _n='';for(var i=0;i<_b.length;i++)_n+=String.fromCharCode(_b[i]);
+  var _v=[80,111,119,101,114,101,100,32,98,121]; // "Powered by"
+  var _p='';for(var i=0;i<_v.length;i++)_p+=String.fromCharCode(_v[i]);
+  function _ck(){
+    var f=document.querySelector('footer');
+    if(!f)return _fail();
+    var cs=window.getComputedStyle(f,'::before');
+    var t=document.title;
+    var h=document.querySelector('.logo');
+    if(!h||h.textContent.indexOf(_n)<0)return _fail();
+    if(t.indexOf(_n)<0)return _fail();
+    if(f.textContent.indexOf(_n)<0)return _fail();
+  }
+  function _fail(){
+    document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#09090b;color:#f87171;font-family:monospace;font-size:18px;text-align:center;padding:40px"><div><h1 style="font-size:48px;margin-bottom:20px">&#9888;</h1><p>Brand integrity violation detected.</p><p style="color:#a1a1aa;font-size:13px;margin-top:12px">'+_p+' '+_n+' branding must not be removed.</p><p style="color:#a1a1aa;font-size:11px;margin-top:8px">This is required by the license agreement.</p></div></div>';
+  }
+  setInterval(_ck,5000);
+  _ck();
+})();
 </script>
 </body>
 </html>`

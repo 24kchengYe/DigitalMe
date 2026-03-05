@@ -102,6 +102,8 @@ func normalizePermissionMode(raw string) string {
 
 func (a *Agent) Name() string { return "claudecode" }
 
+func (a *Agent) WorkDir() string { return a.workDir }
+
 func (a *Agent) SetModel(model string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

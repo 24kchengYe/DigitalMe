@@ -282,6 +282,12 @@ const (
 
 	MsgBannedWordBlocked MsgKey = "banned_word_blocked"
 	MsgCommandDisabled   MsgKey = "command_disabled"
+
+	MsgTaskComplete   MsgKey = "task_complete"
+	MsgSendUsage      MsgKey = "send_usage"
+	MsgSendNotFound   MsgKey = "send_not_found"
+	MsgSendUploading  MsgKey = "send_uploading"
+	MsgSendNotSupport MsgKey = "send_not_support"
 )
 
 var messages = map[MsgKey]map[Language]string{
@@ -497,6 +503,8 @@ var messages = map[MsgKey]map[Language]string{
 			"/doctor\n  Run system diagnostics\n\n" +
 			"/upgrade\n  Check for updates and self-update\n\n" +
 			"/restart\n  Restart cc-connect service\n\n" +
+			"/screenshot (/ss)\n  Capture screen and send to chat\n\n" +
+			"/sendback <filepath>\n  Send a file to chat\n\n" +
 			"/status\n  Show system status\n\n" +
 			"/version\n  Show cc-connect version\n\n" +
 			"/help\n  Show this help\n\n" +
@@ -530,6 +538,8 @@ var messages = map[MsgKey]map[Language]string{
 			"/doctor\n  运行系统诊断\n\n" +
 			"/upgrade\n  检查更新并自动升级\n\n" +
 			"/restart\n  重启 cc-connect 服务\n\n" +
+			"/screenshot (/ss)\n  截取屏幕并发送到聊天\n\n" +
+			"/sendback <文件路径>\n  发送文件到聊天\n\n" +
 			"/status\n  查看系统状态\n\n" +
 			"/version\n  查看 cc-connect 版本\n\n" +
 			"/help\n  显示此帮助\n\n" +
@@ -563,6 +573,8 @@ var messages = map[MsgKey]map[Language]string{
 			"/doctor\n  執行系統診斷\n\n" +
 			"/upgrade\n  檢查更新並自動升級\n\n" +
 			"/restart\n  重啟 cc-connect 服務\n\n" +
+			"/screenshot (/ss)\n  截取螢幕並傳送到聊天\n\n" +
+			"/sendback <檔案路徑>\n  傳送檔案到聊天\n\n" +
 			"/status\n  查看系統狀態\n\n" +
 			"/version\n  查看 cc-connect 版本\n\n" +
 			"/help\n  顯示此說明\n\n" +
@@ -1536,6 +1548,26 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "🚫 命令 `%s` 在當前專案中已被停用。",
 		LangJapanese:           "🚫 コマンド `%s` はこのプロジェクトで無効化されています。",
 		LangSpanish:            "🚫 El comando `%s` está deshabilitado para este proyecto.",
+	},
+	MsgTaskComplete: {
+		LangEnglish: "✅ Task complete | %d tools | %s",
+		LangChinese: "✅ 任务完成 | %d 个工具调用 | 耗时 %s",
+	},
+	MsgSendUsage: {
+		LangEnglish: "Usage: /send <filepath>",
+		LangChinese: "用法: /send <文件路径>",
+	},
+	MsgSendNotFound: {
+		LangEnglish: "File not found: %s",
+		LangChinese: "文件不存在: %s",
+	},
+	MsgSendUploading: {
+		LangEnglish: "📤 Sending file: %s",
+		LangChinese: "📤 正在发送文件: %s",
+	},
+	MsgSendNotSupport: {
+		LangEnglish: "This platform does not support file sending.",
+		LangChinese: "当前平台不支持发送文件。",
 	},
 }
 

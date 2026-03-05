@@ -19,6 +19,11 @@ type ImageSender interface {
 	SendImage(ctx context.Context, replyCtx any, imageData []byte) error
 }
 
+// FileSender is an optional interface for platforms that can send file messages.
+type FileSender interface {
+	SendFile(ctx context.Context, replyCtx any, fileData []byte, fileName, fileType string) error
+}
+
 // ErrNotSupported indicates a platform doesn't support a particular operation.
 var ErrNotSupported = errors.New("operation not supported by this platform")
 
@@ -58,6 +63,22 @@ Examples:
 You can also list or delete cron jobs:
   cc-connect cron list
   cc-connect cron del <job-id>
+
+### Send files to user (sendback)
+When you generate, compile, or create a file that the user would want to receive (PDF, image, spreadsheet, etc.),
+use the Bash tool to send it directly to their chat:
+
+  cc-connect sendback <file-path>
+
+Environment variables CC_PROJECT and CC_SESSION_KEY are already set.
+
+Examples:
+  cc-connect sendback output.pdf
+  cc-connect sendback ./dist/report.xlsx
+  cc-connect sendback screenshot.png
+
+IMPORTANT: Proactively send files when you create them — don't wait for the user to ask.
+For example, after compiling a LaTeX document, send the resulting PDF automatically.
 `
 }
 

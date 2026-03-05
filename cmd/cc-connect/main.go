@@ -58,6 +58,9 @@ func main() {
 		case "send":
 			runSend(os.Args[2:])
 			return
+		case "sendback":
+			runSendback(os.Args[2:])
+			return
 		case "cron":
 			runCron(os.Args[2:])
 			return
@@ -258,6 +261,17 @@ func main() {
 					speechCfg.STT = core.NewOpenAIWhisper(apiKey, "https://api.groq.com/openai/v1", model)
 				} else {
 					slog.Warn("speech: groq provider enabled but api_key is empty")
+				}
+			case "local":
+				exePath := cfg.Speech.Local.ExePath
+				modelPath := cfg.Speech.Local.ModelPath
+				if exePath == "" {
+					exePath = "whisper-cli"
+				}
+				if modelPath == "" {
+					slog.Warn("speech: local provider enabled but model_path is empty")
+				} else {
+					speechCfg.STT = core.NewLocalWhisper(exePath, modelPath)
 				}
 			default: // "openai" or unspecified
 				apiKey := cfg.Speech.OpenAI.APIKey

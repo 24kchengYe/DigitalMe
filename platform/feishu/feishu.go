@@ -380,6 +380,54 @@ func (p *Platform) SendImage(ctx context.Context, rctx any, imageData []byte) er
 	return nil
 }
 
+// SendFile uploads a file to Feishu and sends it as a file message.
+func (p *Platform) SendFile(ctx context.Context, rctx any, fileData []byte, fileName, fileType string) error {
+	rc, ok := rctx.(replyContext)
+	if !ok {
+		return fmt.Errorf("feishu: invalid reply context type %T", rctx)
+	}
+
+	// Map common extensions to Feishu file types
+	if fileType == "" {
+		fileType = "stream"
+	}
+
+	uploadResp, err := p.client.Im.File.Create(ctx, larkim.NewCreateFileReqBuilder().
+		Body(larkim.NewCreateFileReqBodyBuilder().
+			FileType(fileType).
+			FileName(fileName).
+			File(bytes.NewReader(fileData)).
+			Build()).
+		Build())
+	if err != nil {
+		return fmt.Errorf("feishu: upload file: %w", err)
+	}
+	if !uploadResp.Success() {
+		return fmt.Errorf("feishu: upload file code=%d msg=%s", uploadResp.Code, uploadResp.Msg)
+	}
+
+	fileKey := *uploadResp.Data.FileKey
+	content := fmt.Sprintf(`{"file_key":"%s"}`, fileKey)
+
+	sendResp, err := p.client.Im.Message.Create(ctx, larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(larkim.ReceiveIdTypeChatId).
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(rc.chatID).
+			MsgType("file").
+			Content(content).
+			Build()).
+		Build())
+	if err != nil {
+		return fmt.Errorf("feishu: send file: %w", err)
+	}
+	if !sendResp.Success() {
+		return fmt.Errorf("feishu: send file code=%d msg=%s", sendResp.Code, sendResp.Msg)
+	}
+
+	slog.Info("feishu: file sent", "file_key", fileKey, "name", fileName)
+	return nil
+}
+
 // downloadImage fetches an image from Feishu by message_id and image_key.
 func (p *Platform) downloadImage(messageID, imageKey string) ([]byte, string, error) {
 	resp, err := p.client.Im.MessageResource.Get(context.Background(),

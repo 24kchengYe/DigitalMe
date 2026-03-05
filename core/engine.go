@@ -944,6 +944,13 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			if elapsed := time.Since(replyStart); elapsed >= slowPlatformSend {
 				slog.Warn("slow final reply send", "platform", p.Name(), "elapsed", elapsed, "response_len", len(fullResponse))
 			}
+
+			// Send task completion notification for significant work
+			if toolCount > 0 || turnDuration >= 30*time.Second {
+				durationStr := turnDuration.Truncate(time.Second).String()
+				summary := fmt.Sprintf(e.i18n.T(MsgTaskComplete), toolCount, durationStr)
+				e.send(p, replyCtx, summary)
+			}
 			return
 
 		case EventError:
@@ -1011,6 +1018,7 @@ var builtinCommands = []struct {
 	{[]string{"alias"}, "alias"},
 	{[]string{"delete", "del", "rm"}, "delete"},
 	{[]string{"screenshot", "ss", "screen"}, "screenshot"},
+	{[]string{"sendback", "sb"}, "sendback"},
 }
 
 // matchPrefix finds a unique command matching the given prefix.
@@ -1134,6 +1142,8 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 		e.cmdDelete(p, msg, args)
 	case "screenshot":
 		e.cmdScreenshot(p, msg)
+	case "sendback":
+		e.cmdSendback(p, msg, args)
 	default:
 		if custom, ok := e.commands.Resolve(cmd); ok {
 			e.executeCustomCommand(p, msg, custom, args)
@@ -2023,6 +2033,52 @@ func (e *Engine) SendToSession(sessionKey, message string) error {
 	return p.Send(e.ctx, replyCtx, message)
 }
 
+// SendFileToSession sends a file to the platform associated with a session.
+func (e *Engine) SendFileToSession(sessionKey, filePath string) error {
+	e.interactiveMu.Lock()
+	defer e.interactiveMu.Unlock()
+
+	var state *interactiveState
+	if sessionKey != "" {
+		state = e.interactiveStates[sessionKey]
+	} else {
+		for _, s := range e.interactiveStates {
+			state = s
+			break
+		}
+	}
+	if state == nil {
+		return fmt.Errorf("no active session found (key=%q)", sessionKey)
+	}
+
+	state.mu.Lock()
+	p := state.platform
+	replyCtx := state.replyCtx
+	state.mu.Unlock()
+
+	if p == nil {
+		return fmt.Errorf("no active session found (key=%q)", sessionKey)
+	}
+
+	fileSender, ok := p.(FileSender)
+	if !ok {
+		return fmt.Errorf("platform %s does not support file sending", p.Name())
+	}
+
+	info, err := os.Stat(filePath)
+	if err != nil || info.IsDir() {
+		return fmt.Errorf("file not found: %s", filePath)
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("read file: %w", err)
+	}
+
+	fileType := extToFeishuType(filepath.Ext(filePath))
+	return fileSender.SendFile(e.ctx, replyCtx, data, info.Name(), fileType)
+}
+
 // sendPermissionPrompt sends a permission prompt, using inline buttons when the platform supports them.
 func (e *Engine) sendPermissionPrompt(p Platform, replyCtx any, prompt string) {
 	if bs, ok := p.(InlineButtonSender); ok {
@@ -2644,6 +2700,82 @@ func (e *Engine) cmdScreenshot(p Platform, msg *Message) {
 	if err := imgSender.SendImage(e.ctx, msg.ReplyCtx, data); err != nil {
 		e.reply(p, msg.ReplyCtx, "Failed to send screenshot: "+err.Error())
 		return
+	}
+}
+
+func (e *Engine) cmdSendback(p Platform, msg *Message, args []string) {
+	if len(args) == 0 {
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgSendUsage))
+		return
+	}
+
+	fileSender, ok := p.(FileSender)
+	if !ok {
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgSendNotSupport))
+		return
+	}
+
+	filePath := strings.Join(args, " ")
+
+	// Resolve relative paths against the agent's work_dir
+	if !filepath.IsAbs(filePath) {
+		if wd, ok := e.agentWorkDir(); ok {
+			filePath = filepath.Join(wd, filePath)
+		}
+	}
+
+	info, err := os.Stat(filePath)
+	if err != nil || info.IsDir() {
+		e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgSendNotFound), filePath))
+		return
+	}
+
+	e.send(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgSendUploading), info.Name()))
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgError), err))
+		return
+	}
+
+	fileType := extToFeishuType(filepath.Ext(filePath))
+	if err := fileSender.SendFile(e.ctx, msg.ReplyCtx, data, info.Name(), fileType); err != nil {
+		e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgError), err))
+		return
+	}
+}
+
+// agentWorkDir returns the agent's working directory if configured.
+func (e *Engine) agentWorkDir() (string, bool) {
+	type workDirGetter interface {
+		WorkDir() string
+	}
+	if wdg, ok := e.agent.(workDirGetter); ok {
+		wd := wdg.WorkDir()
+		if wd != "" {
+			return wd, true
+		}
+	}
+	return "", false
+}
+
+// extToFeishuType maps file extensions to Feishu file_type values.
+func extToFeishuType(ext string) string {
+	switch strings.ToLower(ext) {
+	case ".pdf":
+		return "pdf"
+	case ".doc", ".docx":
+		return "doc"
+	case ".xls", ".xlsx":
+		return "xls"
+	case ".ppt", ".pptx":
+		return "ppt"
+	case ".mp4":
+		return "mp4"
+	case ".opus", ".ogg":
+		return "opus"
+	default:
+		return "stream"
 	}
 }
 

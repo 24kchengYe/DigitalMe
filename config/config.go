@@ -52,7 +52,7 @@ type IdleConfig struct {
 // SpeechConfig configures speech-to-text for voice messages.
 type SpeechConfig struct {
 	Enabled  bool   `toml:"enabled"`
-	Provider string `toml:"provider"` // "openai" | "groq"
+	Provider string `toml:"provider"` // "openai" | "groq" | "local"
 	Language string `toml:"language"` // e.g. "zh", "en"; empty = auto-detect
 	OpenAI   struct {
 		APIKey  string `toml:"api_key"`
@@ -63,6 +63,10 @@ type SpeechConfig struct {
 		APIKey string `toml:"api_key"`
 		Model  string `toml:"model"`
 	} `toml:"groq"`
+	Local struct {
+		ExePath   string `toml:"exe_path"`   // path to whisper-cli executable
+		ModelPath string `toml:"model_path"` // path to ggml model file
+	} `toml:"local"`
 }
 
 // ProjectConfig binds one agent (with a specific work_dir) to one or more platforms.

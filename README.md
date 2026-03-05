@@ -65,6 +65,9 @@ You've seen [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — th
 - **Idle Session Reminder** — auto-reminds users when sessions go idle, repeating until response
 - **Smart Status Detection** — heartbeat degrades to warning when idle reminders get no response
 - **Remote Screenshot** — `/screenshot` command captures your screen and sends it to chat
+- **File Sendback** — `/sendback` sends files to chat; Claude Code auto-sends generated files (PDF, images, etc.)
+- **Task Completion Notify** — automatic notification when Claude Code finishes a task with tool usage summary
+- **Local Voice Recognition** — speech-to-text via local whisper.cpp model, no API key needed
 - **REST API** — query system status, engine health, session activity programmatically
 
 ## Dashboard
@@ -159,6 +162,9 @@ Open `http://localhost:9315` for the dashboard.
 | Heartbeat monitoring | No | No | **Yes** |
 | Idle reminders | No | No | **Yes** |
 | Remote screenshot | No | No | **Yes** |
+| File sendback | No | No | **Yes** |
+| Task completion notify | No | No | **Yes** |
+| Local voice recognition | No | No | **Yes** |
 | Multi-platform chat | No | No | **Yes** |
 | Self-hosted | Yes | Cloud | **Yes** |
 
@@ -173,6 +179,7 @@ Open `http://localhost:9315` for the dashboard.
 | `/model <name>` | Change the AI model |
 | `/mode <mode>` | Change permission mode |
 | `/screenshot` `/ss` | Capture screen and send to chat |
+| `/sendback <path>` | Send a file to chat (PDF, images, etc.) |
 | `/version` | Show version info |
 | `/help` | Show all commands |
 
@@ -185,6 +192,15 @@ Open `http://localhost:9315` for the dashboard.
 - **Storage**: SQLite-based session persistence
 
 ## Changelog
+
+### v0.5.0 — Smart File Sendback + Voice + Task Notify
+- `/sendback` command: send files (PDF, images, xlsx, etc.) to chat
+- `cc-connect sendback` CLI: Claude Code proactively sends generated files back to user
+- Task completion notification: automatic summary when Claude Code finishes (tools used, duration)
+- Local voice recognition via whisper.cpp — no API key, no server, fully offline
+- `FileSender` interface for platform file upload
+- Feishu file upload and send support
+- Agent system prompt instructs Claude Code to auto-sendback files
 
 ### v0.4.0 — Remote Screenshot
 - `/screenshot` (`/ss`) command: capture your screen and receive it in chat

@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -104,6 +106,83 @@ func (w *OpenAIWhisper) Transcribe(ctx context.Context, audio []byte, format str
 			text = jr.Text
 		}
 	}
+	return text, nil
+}
+
+// LocalWhisper implements SpeechToText using a local whisper.cpp executable.
+// No server needed — calls the CLI directly.
+type LocalWhisper struct {
+	ExePath   string // path to whisper-cli executable
+	ModelPath string // path to ggml model file
+}
+
+func NewLocalWhisper(exePath, modelPath string) *LocalWhisper {
+	return &LocalWhisper{ExePath: exePath, ModelPath: modelPath}
+}
+
+func (w *LocalWhisper) Transcribe(ctx context.Context, audio []byte, format string, lang string) (string, error) {
+	tmpDir := os.TempDir()
+
+	// Write audio to a temp file
+	audioFile := filepath.Join(tmpDir, "digitalme_stt_input."+formatToExt(format))
+	if err := os.WriteFile(audioFile, audio, 0o644); err != nil {
+		return "", fmt.Errorf("local whisper: write temp audio: %w", err)
+	}
+	defer os.Remove(audioFile)
+
+	// Convert to WAV 16kHz mono (whisper.cpp requirement)
+	wavFile := filepath.Join(tmpDir, "digitalme_stt_input.wav")
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		return "", fmt.Errorf("local whisper: ffmpeg required for audio conversion: %w", err)
+	}
+	convCmd := exec.CommandContext(ctx, ffmpegPath,
+		"-i", audioFile,
+		"-ar", "16000",
+		"-ac", "1",
+		"-sample_fmt", "s16",
+		"-f", "wav",
+		"-y", wavFile,
+	)
+	var convErr bytes.Buffer
+	convCmd.Stderr = &convErr
+	if err := convCmd.Run(); err != nil {
+		return "", fmt.Errorf("local whisper: ffmpeg convert: %w (%s)", err, convErr.String())
+	}
+	defer os.Remove(wavFile)
+
+	// Call whisper-cli
+	args := []string{
+		"-m", w.ModelPath,
+		"-f", wavFile,
+		"--no-timestamps",
+		"-nt", // no timestamps in text output
+	}
+	if lang != "" {
+		args = append(args, "-l", lang)
+	}
+
+	cmd := exec.CommandContext(ctx, w.ExePath, args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	slog.Debug("local whisper: running", "exe", w.ExePath, "model", w.ModelPath)
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("local whisper: %w (stderr: %s)", err, stderr.String())
+	}
+
+	text := strings.TrimSpace(stdout.String())
+	if text == "" {
+		// whisper.cpp sometimes outputs to stderr channel
+		text = strings.TrimSpace(stderr.String())
+	}
+
+	// Clean up whisper.cpp output artifacts (sometimes outputs "[BLANK_AUDIO]" etc.)
+	if text == "[BLANK_AUDIO]" {
+		return "", nil
+	}
+
 	return text, nil
 }
 

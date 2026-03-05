@@ -55,6 +55,7 @@ func NewAPIServer(dataDir string) (*APIServer, error) {
 		engines:    make(map[string]*Engine),
 	}
 	s.mux.HandleFunc("/send", s.handleSend)
+	s.mux.HandleFunc("/sendback", s.handleSendback)
 	s.mux.HandleFunc("/sessions", s.handleSessions)
 	s.mux.HandleFunc("/cron/add", s.handleCronAdd)
 	s.mux.HandleFunc("/cron/list", s.handleCronList)
@@ -130,6 +131,58 @@ func (s *APIServer) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := engine.SendToSession(req.SessionKey, req.Message); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// SendbackRequest is the JSON body for POST /sendback.
+type SendbackRequest struct {
+	Project    string `json:"project"`
+	SessionKey string `json:"session_key"`
+	FilePath   string `json:"file_path"`
+}
+
+func (s *APIServer) handleSendback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req SendbackRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.FilePath == "" {
+		http.Error(w, "file_path is required", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.RLock()
+	engine, ok := s.engines[req.Project]
+	s.mu.RUnlock()
+
+	if !ok {
+		s.mu.RLock()
+		if len(s.engines) == 1 {
+			for _, e := range s.engines {
+				engine = e
+				ok = true
+			}
+		}
+		s.mu.RUnlock()
+	}
+
+	if !ok {
+		http.Error(w, fmt.Sprintf("project %q not found", req.Project), http.StatusNotFound)
+		return
+	}
+
+	if err := engine.SendFileToSession(req.SessionKey, req.FilePath); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

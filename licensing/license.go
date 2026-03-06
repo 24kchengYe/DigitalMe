@@ -53,7 +53,14 @@ func Init(keyStr string) error {
 	mgr.mu.Lock()
 	defer mgr.mu.Unlock()
 
+	// Dev branch: always Pro, no license check needed
+	mgr.tier = TierPro
+	mgr.payload = &Payload{Licensee: "Developer", Tier: TierPro}
 	mgr.keyStr = keyStr
+	slog.Info("license: dev build, all features unlocked")
+	return nil
+
+	// --- production code below (unreachable in dev) ---
 
 	if keyStr == "" {
 		mgr.tier = TierFree

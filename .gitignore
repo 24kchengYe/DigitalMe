@@ -10,3 +10,5 @@ config.toml
 dist
 test
 RELEASE.md
+CLAUDE.md
+.claude/

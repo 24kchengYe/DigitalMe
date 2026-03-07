@@ -159,8 +159,9 @@ type interactiveState struct {
 	replyCtx     any
 	mu           sync.Mutex
 	pending      *pendingPermission
-	approveAll   bool // when true, auto-approve all permission requests for this session
-	quiet        bool // when true, suppress thinking and tool progress messages
+	approveAll   bool     // when true, auto-approve all permission requests for this session
+	quiet        bool     // when true, suppress thinking and tool progress messages
+	stopCh       chan struct{} // closed by /stop to interrupt the event loop
 }
 
 // pendingPermission represents a permission request waiting for user response.
@@ -783,7 +784,7 @@ func (e *Engine) getOrCreateInteractiveState(sessionKey string, p Platform, repl
 	startElapsed := time.Since(startAt)
 	if err != nil {
 		slog.Error("failed to start interactive session", "error", err, "elapsed", startElapsed)
-		state = &interactiveState{platform: p, replyCtx: replyCtx, quiet: e.defaultQuiet}
+		state = &interactiveState{platform: p, replyCtx: replyCtx, quiet: e.defaultQuiet, stopCh: make(chan struct{})}
 		e.interactiveStates[sessionKey] = state
 		return state
 	}
@@ -796,6 +797,7 @@ func (e *Engine) getOrCreateInteractiveState(sessionKey string, p Platform, repl
 		platform:     p,
 		replyCtx:     replyCtx,
 		quiet:        e.defaultQuiet,
+		stopCh:       make(chan struct{}),
 	}
 	e.interactiveStates[sessionKey] = state
 
@@ -836,7 +838,21 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 	waitStart := time.Now()
 	firstEventLogged := false
 
-	for event := range state.agentSession.Events() {
+	eventCh := state.agentSession.Events()
+	for {
+		var event Event
+		var ok bool
+		select {
+		case event, ok = <-eventCh:
+			if !ok {
+				return // channel closed, agent session ended
+			}
+		case <-state.stopCh:
+			return // /stop command received
+		case <-e.ctx.Done():
+			return // engine shutting down
+		}
+
 		if e.ctx.Err() != nil {
 			return
 		}
@@ -1699,7 +1715,7 @@ func (e *Engine) cmdQuiet(p Platform, msg *Message) {
 
 	if !ok || state == nil {
 		// No state yet, create one so the flag persists
-		state = &interactiveState{platform: p, replyCtx: msg.ReplyCtx, quiet: true}
+		state = &interactiveState{platform: p, replyCtx: msg.ReplyCtx, quiet: true, stopCh: make(chan struct{})}
 		e.interactiveMu.Lock()
 		e.interactiveStates[msg.SessionKey] = state
 		e.interactiveMu.Unlock()
@@ -1729,6 +1745,9 @@ func (e *Engine) cmdStop(p Platform, msg *Message) {
 		return
 	}
 
+	// Signal the event loop to exit immediately
+	close(state.stopCh)
+
 	// Cancel pending permission if any
 	state.mu.Lock()
 	pending := state.pending
@@ -1741,6 +1760,13 @@ func (e *Engine) cmdStop(p Platform, msg *Message) {
 	}
 
 	e.cleanupInteractiveState(msg.SessionKey)
+
+	// Force-unlock the session so new messages are not blocked.
+	// The goroutine running processInteractiveMessage holds the session lock
+	// and may stay blocked if the agent session close times out.
+	session := e.sessions.GetOrCreateActive(msg.SessionKey)
+	session.Unlock()
+
 	e.reply(p, msg.ReplyCtx, e.i18n.T(MsgExecutionStopped))
 }
 

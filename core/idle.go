@@ -65,11 +65,22 @@ func (ir *IdleReminder) Stop() {
 	close(ir.stopCh)
 }
 
+const idleEvictAfter = 24 * time.Hour
+
 func (ir *IdleReminder) check() {
 	ir.mu.Lock()
 	defer ir.mu.Unlock()
 
 	now := time.Now()
+
+	// Evict sessions idle for more than 24 hours to prevent map growth
+	for sessionKey, lastTime := range ir.lastActivity {
+		if now.Sub(lastTime) > idleEvictAfter {
+			delete(ir.lastActivity, sessionKey)
+			delete(ir.lastReminded, sessionKey)
+		}
+	}
+
 	for sessionKey, lastTime := range ir.lastActivity {
 		idle := now.Sub(lastTime)
 		if idle < ir.idleThreshold {

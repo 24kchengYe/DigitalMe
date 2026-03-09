@@ -40,6 +40,8 @@ func (s *Session) Unlock() {
 	s.UpdatedAt = time.Now()
 }
 
+const maxHistoryEntries = 200
+
 func (s *Session) AddHistory(role, content string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -48,6 +50,9 @@ func (s *Session) AddHistory(role, content string) {
 		Content:   content,
 		Timestamp: time.Now(),
 	})
+	if len(s.History) > maxHistoryEntries {
+		s.History = s.History[len(s.History)-maxHistoryEntries:]
+	}
 }
 
 func (s *Session) ClearHistory() {

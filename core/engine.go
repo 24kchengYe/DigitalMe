@@ -833,6 +833,10 @@ func (e *Engine) cleanupInteractiveState(sessionKey string) {
 }
 
 func (e *Engine) processInteractiveEvents(state *interactiveState, session *Session, sessionKey string, turnStart time.Time) {
+	if state.agentSession == nil {
+		return
+	}
+
 	var textParts []string
 	toolCount := 0
 	waitStart := time.Now()
@@ -956,7 +960,14 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			state.pending = pending
 			state.mu.Unlock()
 
-			<-pending.Resolved
+			select {
+			case <-pending.Resolved:
+			case <-state.stopCh:
+				slog.Info("permission aborted by /stop", "request_id", event.RequestID)
+				return
+			case <-e.ctx.Done():
+				return
+			}
 			slog.Info("permission resolved", "request_id", event.RequestID)
 
 		case EventResult:
@@ -1744,8 +1755,13 @@ func (e *Engine) cmdStop(p Platform, msg *Message) {
 		return
 	}
 
-	// Signal the event loop to exit immediately
-	close(state.stopCh)
+	// Signal the event loop to exit immediately (safe against double-close)
+	select {
+	case <-state.stopCh:
+		// already closed
+	default:
+		close(state.stopCh)
+	}
 
 	// Cancel pending permission if any
 	state.mu.Lock()

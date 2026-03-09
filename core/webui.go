@@ -67,6 +67,9 @@ func (s *WebUIServer) Start() {
 		}
 	}()
 	slog.Info("webui server started", "addr", "http://"+s.addr)
+	if strings.HasPrefix(s.addr, "0.0.0.0") {
+		slog.Warn("webui: listening on all interfaces, dashboard has no authentication — consider using 127.0.0.1")
+	}
 }
 
 func (s *WebUIServer) Stop() {
@@ -386,11 +389,12 @@ function R(){
     if(!en||!en.length){
       tb.innerHTML='<tr><td colspan="5" class="empty-cell">No engines</td></tr>';
     }else{
+      function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
       en.forEach(function(e){
-        var pl=(e.platforms||[]).map(function(p){return '<span class="tag t-zinc">'+p+'</span>'}).join(' ');
+        var pl=(e.platforms||[]).map(function(p){return '<span class="tag t-zinc">'+esc(p)+'</span>'}).join(' ');
         var sc=e.status==='degraded'?'amber':e.status==='unhealthy'?'red':'green';
-        tb.innerHTML+='<tr><td><strong>'+e.name+'</strong></td><td><span class="tag t-teal">'+e.agent_type+'</span></td><td>'+pl+'</td><td style="color:var(--text)">'+
-          (e.active_sessions||0)+'</td><td><span class="tag t-'+sc+'">'+e.status+'</span></td></tr>';
+        tb.innerHTML+='<tr><td><strong>'+esc(e.name)+'</strong></td><td><span class="tag t-teal">'+esc(e.agent_type)+'</span></td><td>'+pl+'</td><td style="color:var(--text)">'+
+          (e.active_sessions||0)+'</td><td><span class="tag t-'+sc+'">'+esc(e.status)+'</span></td></tr>';
       });
     }
 
@@ -403,7 +407,7 @@ function R(){
       ac.sort(function(a,b){return new Date(b.last_activity)-new Date(a.last_activity)});
       ac.forEach(function(a){
         var t=new Date(a.last_activity).toLocaleTimeString();
-        ab.innerHTML+='<div class="act"><span class="act-key">'+a.session_key+'</span><div class="act-r"><span class="act-time">'+t+'</span><span class="act-idle">idle '+a.idle_str+'</span></div></div>';
+        ab.innerHTML+='<div class="act"><span class="act-key">'+esc(a.session_key)+'</span><div class="act-r"><span class="act-time">'+esc(t)+'</span><span class="act-idle">idle '+esc(a.idle_str)+'</span></div></div>';
       });
     }
 

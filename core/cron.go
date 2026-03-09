@@ -52,7 +52,9 @@ func (s *CronStore) load() {
 	if err != nil {
 		return
 	}
-	json.Unmarshal(data, &s.jobs)
+	if err := json.Unmarshal(data, &s.jobs); err != nil {
+		slog.Error("cron: failed to parse jobs file", "path", s.path, "error", err)
+	}
 }
 
 func (s *CronStore) save() error {
@@ -76,7 +78,9 @@ func (s *CronStore) Remove(id string) bool {
 	for i, j := range s.jobs {
 		if j.ID == id {
 			s.jobs = append(s.jobs[:i], s.jobs[i+1:]...)
-			s.save()
+			if err := s.save(); err != nil {
+				slog.Error("cron: failed to save after remove", "id", id, "error", err)
+			}
 			return true
 		}
 	}
@@ -89,7 +93,9 @@ func (s *CronStore) SetEnabled(id string, enabled bool) bool {
 	for _, j := range s.jobs {
 		if j.ID == id {
 			j.Enabled = enabled
-			s.save()
+			if err := s.save(); err != nil {
+				slog.Error("cron: failed to save after setEnabled", "id", id, "error", err)
+			}
 			return true
 		}
 	}

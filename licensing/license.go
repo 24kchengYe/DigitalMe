@@ -59,40 +59,6 @@ func Init(keyStr string) error {
 	mgr.keyStr = keyStr
 	slog.Info("license: dev build, all features unlocked")
 	return nil
-
-	// --- production code below (unreachable in dev) ---
-
-	if keyStr == "" {
-		mgr.tier = TierFree
-		mgr.payload = nil
-		slog.Info("license: no key configured, running in Free tier")
-		return nil
-	}
-
-	payload, err := verifyKey(keyStr)
-	if err != nil {
-		mgr.tier = TierFree
-		mgr.payload = nil
-		slog.Warn("license: invalid key, falling back to Free tier", "error", err)
-		return fmt.Errorf("license verification failed: %w", err)
-	}
-
-	if payload.IsExpired() {
-		mgr.tier = TierFree
-		mgr.payload = payload
-		slog.Warn("license: key expired, falling back to Free tier",
-			"licensee", payload.Licensee, "expires", payload.Expires)
-		return nil
-	}
-
-	mgr.tier = payload.Tier
-	mgr.payload = payload
-	slog.Info("license: verified",
-		"tier", payload.Tier,
-		"licensee", payload.Licensee,
-		"expires", payload.Expires,
-	)
-	return nil
 }
 
 // IsFeatureEnabled checks whether a feature is available under the current license.

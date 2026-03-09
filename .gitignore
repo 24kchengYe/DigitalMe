@@ -2,6 +2,7 @@
 config.toml
 .cc-connect/
 *.exe
+*.exe~
 *.dll
 *.so
 *.dylib

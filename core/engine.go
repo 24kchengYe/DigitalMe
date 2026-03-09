@@ -845,7 +845,23 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 		select {
 		case event, ok = <-eventCh:
 			if !ok {
-				return // channel closed, agent session ended
+				// Channel closed - process exited unexpectedly
+				slog.Warn("agent process exited", "session_key", sessionKey)
+				e.cleanupInteractiveState(sessionKey)
+
+				if len(textParts) > 0 {
+					state.mu.Lock()
+					pp := state.platform
+					rc := state.replyCtx
+					state.mu.Unlock()
+
+					fullResponse := strings.Join(textParts, "")
+					session.AddHistory("assistant", fullResponse)
+					for _, chunk := range splitMessage(fullResponse, maxPlatformMessageLen) {
+						e.send(pp, rc, chunk)
+					}
+				}
+				return
 			}
 		case <-state.stopCh:
 			return // /stop command received
@@ -998,23 +1014,6 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				e.send(p, replyCtx, fmt.Sprintf(e.i18n.T(MsgError), event.Error))
 			}
 			return
-		}
-	}
-
-	// Channel closed - process exited unexpectedly
-	slog.Warn("agent process exited", "session_key", sessionKey)
-	e.cleanupInteractiveState(sessionKey)
-
-	if len(textParts) > 0 {
-		state.mu.Lock()
-		p := state.platform
-		replyCtx := state.replyCtx
-		state.mu.Unlock()
-
-		fullResponse := strings.Join(textParts, "")
-		session.AddHistory("assistant", fullResponse)
-		for _, chunk := range splitMessage(fullResponse, maxPlatformMessageLen) {
-			e.send(p, replyCtx, chunk)
 		}
 	}
 }
@@ -1335,7 +1334,7 @@ func (e *Engine) cmdSwitch(p Platform, msg *Message, args []string) {
 
 func (e *Engine) cmdName(p Platform, msg *Message, args []string) {
 	if len(args) == 0 {
-		e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgNameUsage)))
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgNameUsage))
 		return
 	}
 
@@ -1346,7 +1345,7 @@ func (e *Engine) cmdName(p Platform, msg *Message, args []string) {
 	if idx, err := strconv.Atoi(args[0]); err == nil && idx >= 1 {
 		// /name <number> <name...>
 		if len(args) < 2 {
-			e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgNameUsage)))
+			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgNameUsage))
 			return
 		}
 		agentSessions, err := e.agent.ListSessions(e.ctx)
@@ -1373,7 +1372,7 @@ func (e *Engine) cmdName(p Platform, msg *Message, args []string) {
 
 	name = strings.TrimSpace(name)
 	if name == "" {
-		e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgNameUsage)))
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgNameUsage))
 		return
 	}
 
@@ -2951,7 +2950,7 @@ func (e *Engine) cmdAlias(p Platform, msg *Message, args []string) {
 	case "del", "delete", "remove":
 		e.cmdAliasDel(p, msg, args[1:])
 	default:
-		e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgAliasUsage)))
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgAliasUsage))
 	}
 }
 

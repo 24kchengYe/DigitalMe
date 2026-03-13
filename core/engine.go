@@ -3024,6 +3024,13 @@ func (e *Engine) applyCd(p Platform, msg *Message, setter interface{ SetWorkDir(
 	e.cleanupInteractiveState(msg.SessionKey)
 	setter.SetWorkDir(dir)
 
+	// Reset agent session ID so the next message starts fresh in the new directory
+	// instead of trying to resume the old directory's session.
+	session := e.sessions.GetOrCreateActive(msg.SessionKey)
+	session.AgentSessionID = ""
+	session.ClearHistory()
+	e.sessions.Save()
+
 	e.cdResultsMu.Lock()
 	delete(e.cdResults, msg.SessionKey)
 	delete(e.cdPending, msg.SessionKey)
@@ -3052,6 +3059,12 @@ func (e *Engine) applyCdWithCopy(p Platform, msg *Message, setter interface{ Set
 
 	e.cleanupInteractiveState(msg.SessionKey)
 	setter.SetWorkDir(dir)
+
+	// Reset agent session ID so the next message starts fresh in the new directory.
+	session := e.sessions.GetOrCreateActive(msg.SessionKey)
+	session.AgentSessionID = ""
+	session.ClearHistory()
+	e.sessions.Save()
 
 	e.cdResultsMu.Lock()
 	delete(e.cdResults, msg.SessionKey)

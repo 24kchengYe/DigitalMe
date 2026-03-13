@@ -54,7 +54,8 @@ You've seen [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — th
 - **8 Chat Platforms** — Feishu, DingTalk, Telegram, Slack, Discord, LINE, WeChat Work, QQ
 - **Persistent Sessions** — Claude Code process stays alive, no cold-start per message
 - **Multi-session** — multiple conversations per user, switch freely with `/list` and `/switch`
-- **Slash Commands** — `/new`, `/model`, `/mode`, `/stop`, `/help`, and more
+- **Slash Commands** — `/new`, `/model`, `/mode`, `/stop`, `/cd`, `/help`, and more
+- **Remote Directory Switching** — `/cd` lets you search and switch Claude Code's working directory from your phone, no need to remember paths
 - **Permission Modes** — default, acceptEdits, plan-only, YOLO
 - **Voice & Images** — speech-to-text, screenshot analysis via multimodal support
 - **Scheduled Tasks** — cron jobs described in natural language
@@ -287,12 +288,37 @@ Key points:
 | Persistent sessions | Yes | Yes | Yes |
 | Heartbeat monitoring | No | No | **Yes** |
 | Idle reminders | No | No | **Yes** |
+| Remote dir switching | No | No | **Yes (`/cd`)** |
 | Remote screenshot | No | No | **Yes** |
 | File sendback | No | No | **Yes** |
 | Task completion notify | No | No | **Yes** |
 | Local voice recognition | No | No | **Yes** |
 | Multi-platform chat | No | No | **Yes** |
 | Self-hosted | Yes | Cloud | **Yes** |
+
+## Remote Directory Switching (`/cd`)
+
+Switch Claude Code's working directory from your phone — no need to SSH in or remember full paths.
+
+```
+You:  /cd digital
+Bot:  🔍 Searching for folders matching: digital
+      📂 Found 3 matching folder(s):
+      1. D:\projects\digital-garden
+      2. D:\pythonPycharms\055digitalme
+      3. C:\Users\dev\digital-notes
+      Reply /cd <number> to select.
+
+You:  /cd 2
+Bot:  ✅ Switched to: D:\pythonPycharms\055digitalme
+      New sessions will run in this directory.
+```
+
+- **Fuzzy search** — just type a keyword, DigitalMe scans your drives for matching folders
+- **Two-level deep** — searches top-level directories and one level of subdirectories
+- **Interactive selection** — multiple matches? Pick by number
+- **Direct path** — `/cd D:\exact\path` works too
+- **Safe** — only reads directory names, never touches file contents
 
 ## Slash Commands
 
@@ -302,6 +328,7 @@ Key points:
 | `/list` | List all sessions |
 | `/switch <id>` | Switch to a session |
 | `/stop` | Stop the current agent process |
+| `/cd <keyword>` | Search & switch working directory from chat |
 | `/model <name>` | Change the AI model |
 | `/mode <mode>` | Change permission mode |
 | `/screenshot` `/ss` | Capture screen and send to chat |
@@ -318,6 +345,12 @@ Key points:
 - **Storage**: SQLite-based session persistence
 
 ## Changelog
+
+### v0.6.0 — Remote Directory Switching
+- `/cd <keyword>` command: search and switch Claude Code's working directory from chat
+- Fuzzy directory search across all drives, two levels deep
+- Interactive numbered selection for multiple matches
+- Automatic session cleanup on directory change
 
 ### v0.5.0 — Smart File Sendback + Voice + Task Notify
 - `/sendback` command: send files (PDF, images, xlsx, etc.) to chat

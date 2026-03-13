@@ -147,9 +147,11 @@ type Engine struct {
 
 	disabledCmds map[string]bool
 
-	// /cd pending search results per session
-	cdResultsMu sync.Mutex
-	cdResults   map[string][]string // sessionKey → list of directory paths
+	// /cd pending search results and pending switch per session
+	cdResultsMu  sync.Mutex
+	cdResults    map[string][]string // sessionKey → list of directory paths
+	cdPending    map[string]string   // sessionKey → selected directory awaiting move/go decision
+	cdLastHint   map[string]string   // sessionKey → last search keyword (for "no" → full scan)
 
 	// Interactive agent session management
 	interactiveMu     sync.Mutex
@@ -199,6 +201,8 @@ func NewEngine(name string, ag Agent, platforms []Platform, sessionStorePath str
 		aliases:           make(map[string]string),
 		interactiveStates: make(map[string]*interactiveState),
 		cdResults:         make(map[string][]string),
+		cdPending:         make(map[string]string),
+		cdLastHint:        make(map[string]string),
 		startedAt:         time.Now(),
 	}
 
@@ -2845,7 +2849,14 @@ func (e *Engine) agentWorkDir() (string, bool) {
 }
 
 // cmdCd implements the /cd command for switching the agent's working directory.
-// Flow: /cd → show current dir; /cd <hint> → search & list; /cd <number> → select from results.
+// Flow:
+//   /cd              → show current dir
+//   /cd <hint>       → search history & known projects first → list
+//   /cd <number>     → select from results → ask move/go
+//   /cd no           → skip history results, do full disk scan
+//   /cd move         → copy sessions + switch
+//   /cd go           → switch without copying
+//   /cd <abs_path>   → ask move/go for that path
 func (e *Engine) cmdCd(p Platform, msg *Message, args []string) {
 	type workDirSetter interface {
 		WorkDir() string
@@ -2864,6 +2875,43 @@ func (e *Engine) cmdCd(p Platform, msg *Message, args []string) {
 	}
 
 	input := strings.Join(args, " ")
+	lower := strings.ToLower(input)
+
+	// Check for move/go decision on a pending switch
+	if lower == "move" || lower == "go" {
+		e.cdResultsMu.Lock()
+		pendingDir := e.cdPending[msg.SessionKey]
+		e.cdResultsMu.Unlock()
+
+		if pendingDir == "" {
+			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgCdNoPending))
+			return
+		}
+
+		if lower == "move" {
+			e.applyCdWithCopy(p, msg, setter, pendingDir)
+		} else {
+			e.applyCd(p, msg, setter, pendingDir)
+		}
+		return
+	}
+
+	// "no" → user rejected history results, do full disk scan with the previous hint
+	if lower == "no" {
+		e.cdResultsMu.Lock()
+		lastHint := e.cdLastHint[msg.SessionKey]
+		e.cdResultsMu.Unlock()
+
+		if lastHint == "" {
+			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgCdNoPending))
+			return
+		}
+
+		e.send(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdSearching), lastHint))
+		results := searchDirectoriesFull(lastHint)
+		e.cdShowResults(p, msg, results, lastHint)
+		return
+	}
 
 	// Check if input is a number → select from previous search results
 	if n, err := strconv.Atoi(input); err == nil {
@@ -2873,7 +2921,7 @@ func (e *Engine) cmdCd(p Platform, msg *Message, args []string) {
 
 		if results != nil && n >= 1 && n <= len(results) {
 			selected := results[n-1]
-			e.applyCd(p, msg, setter, selected)
+			e.cdAskMoveOrGo(p, msg, selected)
 			return
 		}
 	}
@@ -2881,33 +2929,46 @@ func (e *Engine) cmdCd(p Platform, msg *Message, args []string) {
 	// Check if input is an exact existing directory path
 	if filepath.IsAbs(input) {
 		if info, err := os.Stat(input); err == nil && info.IsDir() {
-			e.applyCd(p, msg, setter, input)
+			e.cdAskMoveOrGo(p, msg, input)
 			return
 		}
 	}
 
-	// Search for matching directories
+	// Phase 1: Fast search — history + known Claude projects only
+	fastResults := searchDirectoriesFast(input)
+
+	if len(fastResults) > 0 {
+		// Save the hint so "/cd no" can trigger a full scan later
+		e.cdResultsMu.Lock()
+		e.cdLastHint[msg.SessionKey] = input
+		e.cdResultsMu.Unlock()
+
+		e.cdShowResultsWithSkip(p, msg, fastResults, input)
+		return
+	}
+
+	// Phase 2: No fast results — go straight to full disk scan
 	e.send(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdSearching), input))
+	results := searchDirectoriesFull(input)
+	e.cdShowResults(p, msg, results, input)
+}
 
-	results := searchDirectories(input)
-
+// cdShowResults displays search results or "not found" message.
+func (e *Engine) cdShowResults(p Platform, msg *Message, results []string, hint string) {
 	if len(results) == 0 {
-		e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdNoResults), input))
+		e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdNoResults), hint))
 		return
 	}
 
-	// If exactly 1 result, switch directly
 	if len(results) == 1 {
-		e.applyCd(p, msg, setter, results[0])
+		e.cdAskMoveOrGo(p, msg, results[0])
 		return
 	}
 
-	// Store results for number-based selection
 	e.cdResultsMu.Lock()
 	e.cdResults[msg.SessionKey] = results
 	e.cdResultsMu.Unlock()
 
-	// Build numbered list
 	var sb strings.Builder
 	for i, dir := range results {
 		sb.WriteString(fmt.Sprintf("`%d.` `%s`\n", i+1, dir))
@@ -2918,86 +2979,355 @@ func (e *Engine) cmdCd(p Platform, msg *Message, args []string) {
 	e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdResults), len(results), sb.String()))
 }
 
-func (e *Engine) applyCd(p Platform, msg *Message, setter interface{ SetWorkDir(string) }, dir string) {
-	// Cleanup current interactive state since the directory is changing
-	e.cleanupInteractiveState(msg.SessionKey)
+// cdShowResultsWithSkip is like cdShowResults but appends a "not these? /cd no" hint.
+func (e *Engine) cdShowResultsWithSkip(p Platform, msg *Message, results []string, hint string) {
+	if len(results) == 1 {
+		// Even with 1 result from history, confirm with skip option
+		e.cdResultsMu.Lock()
+		e.cdResults[msg.SessionKey] = results
+		e.cdResultsMu.Unlock()
 
-	setter.SetWorkDir(dir)
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("`1.` `%s`\n", results[0]))
+		sb.WriteString("\n")
+		sb.WriteString(e.i18n.T(MsgCdSelectOrScanHint))
 
-	// Clear pending cd results
+		e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdResults), 1, sb.String()))
+		return
+	}
+
 	e.cdResultsMu.Lock()
-	delete(e.cdResults, msg.SessionKey)
+	e.cdResults[msg.SessionKey] = results
 	e.cdResultsMu.Unlock()
 
+	var sb strings.Builder
+	for i, dir := range results {
+		sb.WriteString(fmt.Sprintf("`%d.` `%s`\n", i+1, dir))
+	}
+	sb.WriteString("\n")
+	sb.WriteString(e.i18n.T(MsgCdSelectOrScanHint))
+
+	e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdResults), len(results), sb.String()))
+}
+
+// cdAskMoveOrGo stores the selected directory and asks the user whether to copy sessions.
+func (e *Engine) cdAskMoveOrGo(p Platform, msg *Message, dir string) {
+	e.cdResultsMu.Lock()
+	e.cdPending[msg.SessionKey] = dir
+	e.cdResultsMu.Unlock()
+
+	e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdConfirmMove), dir))
+}
+
+// applyCd switches directory without copying sessions.
+func (e *Engine) applyCd(p Platform, msg *Message, setter interface{ SetWorkDir(string) }, dir string) {
+	e.cleanupInteractiveState(msg.SessionKey)
+	setter.SetWorkDir(dir)
+
+	e.cdResultsMu.Lock()
+	delete(e.cdResults, msg.SessionKey)
+	delete(e.cdPending, msg.SessionKey)
+	delete(e.cdLastHint, msg.SessionKey)
+	e.cdResultsMu.Unlock()
+
+	cdHistoryAdd(dir)
 	e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdSwitched), dir))
 }
 
-// searchDirectories finds directories matching a keyword hint by scanning common root paths.
-func searchDirectories(hint string) []string {
-	hint = strings.ToLower(hint)
-
-	// Root directories to scan
-	var roots []string
-
-	// Add common development directories
-	if home, err := os.UserHomeDir(); err == nil {
-		roots = append(roots, home)
+// applyCdWithCopy copies sessions from old dir to new dir, then switches.
+func (e *Engine) applyCdWithCopy(p Platform, msg *Message, setter interface{ SetWorkDir(string) }, dir string) {
+	type sessionCopier interface {
+		CopySessionsTo(targetDir string) (int, error)
 	}
 
-	// Scan drive letters on Windows
-	for _, drive := range []string{"C:", "D:", "E:", "F:"} {
-		if info, err := os.Stat(drive + `\`); err == nil && info.IsDir() {
-			roots = append(roots, drive+`\`)
-		}
-	}
-
-	var matches []string
-	seen := make(map[string]bool)
-
-	for _, root := range roots {
-		entries, err := os.ReadDir(root)
+	copied := 0
+	if copier, ok := e.agent.(sessionCopier); ok {
+		var err error
+		copied, err = copier.CopySessionsTo(dir)
 		if err != nil {
-			continue
+			slog.Warn("cd: failed to copy sessions", "error", err)
+			e.send(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdCopyFailed), err))
 		}
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			name := entry.Name()
-			full := filepath.Join(root, name)
-			if seen[full] {
-				continue
-			}
-			if matchDirHint(name, hint) {
-				matches = append(matches, full)
-				seen[full] = true
-				continue
-			}
-			// Also search one level deeper
-			subEntries, err := os.ReadDir(full)
-			if err != nil {
-				continue
-			}
-			for _, sub := range subEntries {
-				if !sub.IsDir() {
+	}
+
+	e.cleanupInteractiveState(msg.SessionKey)
+	setter.SetWorkDir(dir)
+
+	e.cdResultsMu.Lock()
+	delete(e.cdResults, msg.SessionKey)
+	delete(e.cdPending, msg.SessionKey)
+	delete(e.cdLastHint, msg.SessionKey)
+	e.cdResultsMu.Unlock()
+
+	cdHistoryAdd(dir)
+	e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdSwitchedWithCopy), dir, copied))
+}
+
+// ── /cd directory search ──────────────────────────────────────
+
+// cdHistory tracks recently used directories for fast matching.
+// Persisted to ~/.cc-connect/cd_history.json and auto-seeded from Claude projects.
+var (
+	cdHistoryMu      sync.Mutex
+	cdHistoryDirs    []string // most recent first, max 50
+	cdHistorySeeded  bool
+)
+
+const cdHistoryMax = 50
+
+func cdHistoryFile() string {
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".cc-connect", "cd_history.json")
+	}
+	return ""
+}
+
+// cdHistoryLoad loads history from disk and seeds from Claude projects on first call.
+func cdHistoryLoad() {
+	cdHistoryMu.Lock()
+	defer cdHistoryMu.Unlock()
+
+	if cdHistorySeeded {
+		return
+	}
+	cdHistorySeeded = true
+
+	// Load persisted history
+	if path := cdHistoryFile(); path != "" {
+		if data, err := os.ReadFile(path); err == nil {
+			json.Unmarshal(data, &cdHistoryDirs)
+		}
+	}
+
+	// Seed from ~/.claude/projects/ — all directories with Claude Code sessions
+	seen := make(map[string]bool)
+	for _, d := range cdHistoryDirs {
+		seen[strings.ToLower(d)] = true
+	}
+
+	if home, err := os.UserHomeDir(); err == nil {
+		projectsBase := filepath.Join(home, ".claude", "projects")
+		if entries, err := os.ReadDir(projectsBase); err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() {
 					continue
 				}
-				subFull := filepath.Join(full, sub.Name())
-				if seen[subFull] {
+				decoded := decodeProjectDirName(entry.Name())
+				if decoded == "" {
 					continue
 				}
-				if matchDirHint(sub.Name(), hint) {
-					matches = append(matches, subFull)
-					seen[subFull] = true
+				lower := strings.ToLower(decoded)
+				if seen[lower] {
+					continue
+				}
+				if info, err := os.Stat(decoded); err == nil && info.IsDir() {
+					cdHistoryDirs = append(cdHistoryDirs, decoded)
+					seen[lower] = true
 				}
 			}
 		}
-		if len(matches) >= 20 {
+	}
+
+	if len(cdHistoryDirs) > cdHistoryMax {
+		cdHistoryDirs = cdHistoryDirs[:cdHistoryMax]
+	}
+}
+
+func cdHistorySave() {
+	path := cdHistoryFile()
+	if path == "" {
+		return
+	}
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	data, _ := json.Marshal(cdHistoryDirs)
+	os.WriteFile(path, data, 0o644)
+}
+
+func cdHistoryAdd(dir string) {
+	cdHistoryLoad() // ensure seeded
+	cdHistoryMu.Lock()
+	defer cdHistoryMu.Unlock()
+	// Remove if already present
+	for i, d := range cdHistoryDirs {
+		if strings.EqualFold(d, dir) {
+			cdHistoryDirs = append(cdHistoryDirs[:i], cdHistoryDirs[i+1:]...)
 			break
 		}
 	}
+	// Prepend
+	cdHistoryDirs = append([]string{dir}, cdHistoryDirs...)
+	if len(cdHistoryDirs) > cdHistoryMax {
+		cdHistoryDirs = cdHistoryDirs[:cdHistoryMax]
+	}
+	cdHistorySave()
+}
 
-	// Sort: prefer shorter paths (closer to root)
+// skipDirs contains directory names to skip during search (case-insensitive).
+var skipDirs = map[string]bool{
+	"windows":          true,
+	"program files":    true,
+	"program files (x86)": true,
+	"programdata":      true,
+	"$recycle.bin":     true,
+	"system volume information": true,
+	"recovery":         true,
+	"perflogs":         true,
+	"msocache":         true,
+	"config.msi":       true,
+	"appdata":          true,
+	"node_modules":     true,
+	".git":             true,
+	"__pycache__":      true,
+	".venv":            true,
+	"venv":             true,
+}
+
+func shouldSkipDir(name string) bool {
+	return skipDirs[strings.ToLower(name)]
+}
+
+// searchDirectoriesFast searches only history and known Claude projects (instant).
+// History is auto-seeded from ~/.claude/projects/ on first call.
+func searchDirectoriesFast(hint string) []string {
+	cdHistoryLoad() // ensure history is loaded and seeded
+
+	hint = strings.ToLower(hint)
+	var matches []string
+
+	cdHistoryMu.Lock()
+	history := make([]string, len(cdHistoryDirs))
+	copy(history, cdHistoryDirs)
+	cdHistoryMu.Unlock()
+
+	for _, dir := range history {
+		if matchDirHint(filepath.Base(dir), hint) || matchDirHint(dir, hint) {
+			matches = append(matches, dir)
+		}
+	}
+
+	if len(matches) > 10 {
+		matches = matches[:10]
+	}
+	return matches
+}
+
+// searchDirectoriesFull does a full parallel disk scan with a 5-second timeout.
+func searchDirectoriesFull(hint string) []string {
+	hint = strings.ToLower(hint)
+	seen := make(map[string]bool)
+
+	// Include fast results first
+	fastResults := searchDirectoriesFast(hint)
+	var matches []string
+	for _, d := range fastResults {
+		matches = append(matches, d)
+		seen[strings.ToLower(d)] = true
+	}
+
+	// Build roots: drives + home + parent dirs of known projects (for deeper scan)
+	rootSet := make(map[string]bool)
+	if home, err := os.UserHomeDir(); err == nil {
+		rootSet[home] = true
+	}
+	for _, drive := range []string{"C:", "D:", "E:", "F:"} {
+		if info, err := os.Stat(drive + `\`); err == nil && info.IsDir() {
+			rootSet[drive+`\`] = true
+		}
+	}
+
+	// Extract parent directories (+ grandparents) from history for deep scan
+	deepRoots := make(map[string]bool)
+	cdHistoryMu.Lock()
+	histCopy := make([]string, len(cdHistoryDirs))
+	copy(histCopy, cdHistoryDirs)
+	cdHistoryMu.Unlock()
+	for _, dir := range histCopy {
+		// Add parent, grandparent, great-grandparent
+		for d := filepath.Dir(dir); d != "" && d != filepath.Dir(d); d = filepath.Dir(d) {
+			deepRoots[d] = true
+		}
+	}
+
+	// Merge: deep roots get recursive scan, drive roots get 2-level scan
+	var shallowRoots []string
+	for r := range rootSet {
+		if !deepRoots[r] {
+			shallowRoots = append(shallowRoots, r)
+		}
+	}
+	var deepRootList []string
+	for r := range deepRoots {
+		deepRootList = append(deepRootList, r)
+	}
+
+	totalJobs := len(shallowRoots) + len(deepRootList)
+	ch := make(chan []string, totalJobs)
+
+	// Shallow scan: drives — 2 levels only
+	for _, root := range shallowRoots {
+		go func(root string) {
+			var found []string
+			entries, err := os.ReadDir(root)
+			if err != nil {
+				ch <- nil
+				return
+			}
+			for _, entry := range entries {
+				if !entry.IsDir() || shouldSkipDir(entry.Name()) {
+					continue
+				}
+				name := entry.Name()
+				full := filepath.Join(root, name)
+				if matchDirHint(name, hint) {
+					found = append(found, full)
+				}
+				subEntries, err := os.ReadDir(full)
+				if err != nil {
+					continue
+				}
+				for _, sub := range subEntries {
+					if !sub.IsDir() || shouldSkipDir(sub.Name()) {
+						continue
+					}
+					if matchDirHint(sub.Name(), hint) {
+						found = append(found, filepath.Join(full, sub.Name()))
+					}
+				}
+			}
+			ch <- found
+		}(root)
+	}
+
+	// Deep scan: project parent dirs — recursive up to 5 levels
+	for _, root := range deepRootList {
+		go func(root string) {
+			var found []string
+			scanDirRecursive(root, hint, 5, &found)
+			ch <- found
+		}(root)
+	}
+
+	// Collect results with 5-second timeout
+	timeout := time.After(5 * time.Second)
+	collected := 0
+	for collected < totalJobs {
+		select {
+		case found := <-ch:
+			for _, d := range found {
+				lower := strings.ToLower(d)
+				if !seen[lower] {
+					matches = append(matches, d)
+					seen[lower] = true
+				}
+			}
+			collected++
+		case <-timeout:
+			slog.Warn("cd: full scan timed out", "scanned", collected, "total", totalJobs)
+			goto done
+		}
+	}
+done:
+
 	sort.Slice(matches, func(i, j int) bool {
 		return len(matches[i]) < len(matches[j])
 	})
@@ -3006,6 +3336,104 @@ func searchDirectories(hint string) []string {
 		matches = matches[:10]
 	}
 	return matches
+}
+
+// decodeProjectDirName reconstructs an absolute path from a Claude Code project
+// directory name by greedily matching real filesystem entries.
+//
+// Claude Code encodes paths by replacing ":", "/", "\" AND non-ASCII characters
+// (like Chinese) with "-". So "D:\pythonPycharms\工具开发\055digitalme" becomes
+// "D--pythonPycharms------055digitalme". Simple replacement can't reverse this
+// because we don't know which "-" were separators vs encoded characters.
+//
+// Strategy: start from the drive root and greedily match directory entries against
+// the remaining encoded string at each level.
+func decodeProjectDirName(name string) string {
+	if len(name) < 3 {
+		return ""
+	}
+
+	// Windows: first char is drive letter, followed by "--" (was ":\")
+	if name[1] != '-' || name[2] != '-' {
+		// Unix: try simple replacement (no ambiguity without non-ASCII)
+		return strings.ReplaceAll(name, "-", "/")
+	}
+
+	drive := string(name[0]) + `:\`
+	remaining := name[3:] // after "D--"
+
+	return greedyMatchPath(drive, remaining)
+}
+
+// greedyMatchPath reconstructs a path by matching encoded segments against real
+// filesystem entries. At each level it tries to find the longest directory name
+// that matches the beginning of the remaining encoded string.
+func greedyMatchPath(base, encoded string) string {
+	if encoded == "" {
+		return base
+	}
+
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return ""
+	}
+
+	// Try longest match first: encode each real dir name and see if the
+	// remaining string starts with it.
+	type candidate struct {
+		name    string
+		encLen  int
+	}
+	var candidates []candidate
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		dirName := entry.Name()
+		// Encode the real directory name the same way Claude Code does
+		enc := encodeDirSegment(dirName)
+		if strings.HasPrefix(encoded, enc) {
+			candidates = append(candidates, candidate{dirName, len(enc)})
+		}
+	}
+
+	// Sort by encoded length descending (longest/greediest match first)
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].encLen > candidates[j].encLen
+	})
+
+	for _, c := range candidates {
+		rest := encoded[c.encLen:]
+		nextBase := filepath.Join(base, c.name)
+
+		if rest == "" {
+			return nextBase
+		}
+
+		// rest should start with "-" (the separator)
+		if rest[0] == '-' {
+			if result := greedyMatchPath(nextBase, rest[1:]); result != "" {
+				return result
+			}
+		}
+	}
+
+	return ""
+}
+
+// encodeDirSegment encodes a directory name the same way Claude Code does:
+// replace non-ASCII characters and path separators with "-".
+func encodeDirSegment(name string) string {
+	var sb strings.Builder
+	for _, r := range name {
+		if r > 127 || r == '/' || r == '\\' || r == ':' {
+			sb.WriteByte('-')
+		} else {
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
 }
 
 // matchDirHint checks if a directory name matches the search hint.
@@ -3028,6 +3456,30 @@ func matchDirHint(dirName, hint string) bool {
 		return allMatch
 	}
 	return false
+}
+
+// scanDirRecursive recursively scans a directory for matching subdirectories.
+// maxDepth limits how deep to recurse (0 = only check this dir's children).
+func scanDirRecursive(dir, hint string, maxDepth int, results *[]string) {
+	if maxDepth < 0 {
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || shouldSkipDir(entry.Name()) {
+			continue
+		}
+		full := filepath.Join(dir, entry.Name())
+		if matchDirHint(entry.Name(), hint) {
+			*results = append(*results, full)
+		}
+		if maxDepth > 0 {
+			scanDirRecursive(full, hint, maxDepth-1, results)
+		}
+	}
 }
 
 // extToFeishuType maps file extensions to Feishu file_type values.

@@ -290,6 +290,15 @@ const (
 	MsgSendNotFound   MsgKey = "send_not_found"
 	MsgSendUploading  MsgKey = "send_uploading"
 	MsgSendNotSupport MsgKey = "send_not_support"
+
+	MsgCdCurrent        MsgKey = "cd_current"
+	MsgCdNotSupported   MsgKey = "cd_not_supported"
+	MsgCdSearching      MsgKey = "cd_searching"
+	MsgCdResults        MsgKey = "cd_results"
+	MsgCdNoResults      MsgKey = "cd_no_results"
+	MsgCdSwitched       MsgKey = "cd_switched"
+	MsgCdInvalidPath    MsgKey = "cd_invalid_path"
+	MsgCdSelectHint     MsgKey = "cd_select_hint"
 )
 
 var messages = map[MsgKey]map[Language]string{
@@ -507,6 +516,7 @@ var messages = map[MsgKey]map[Language]string{
 			"/restart\n  Restart cc-connect service\n\n" +
 			"/screenshot (/ss)\n  Capture screen and send to chat\n\n" +
 			"/sendback <filepath>\n  Send a file to chat\n\n" +
+			"/cd [hint|number]\n  Search & switch working directory\n\n" +
 			"/status\n  Show system status\n\n" +
 			"/version\n  Show cc-connect version\n\n" +
 			"/help\n  Show this help\n\n" +
@@ -542,6 +552,7 @@ var messages = map[MsgKey]map[Language]string{
 			"/restart\n  重启 cc-connect 服务\n\n" +
 			"/screenshot (/ss)\n  截取屏幕并发送到聊天\n\n" +
 			"/sendback <文件路径>\n  发送文件到聊天\n\n" +
+			"/cd [关键词|序号]\n  搜索并切换工作目录\n\n" +
 			"/status\n  查看系统状态\n\n" +
 			"/version\n  查看 cc-connect 版本\n\n" +
 			"/help\n  显示此帮助\n\n" +
@@ -1577,6 +1588,38 @@ var messages = map[MsgKey]map[Language]string{
 	MsgSendNotSupport: {
 		LangEnglish: "This platform does not support file sending.",
 		LangChinese: "当前平台不支持发送文件。",
+	},
+	MsgCdCurrent: {
+		LangEnglish: "📂 Current directory: `%s`\n\nUsage: `/cd <hint>` — search for a folder by keyword",
+		LangChinese: "📂 当前目录: `%s`\n\n用法: `/cd <关键词>` — 按关键词搜索文件夹",
+	},
+	MsgCdNotSupported: {
+		LangEnglish: "This agent does not support changing work directory.",
+		LangChinese: "当前 Agent 不支持切换工作目录。",
+	},
+	MsgCdSearching: {
+		LangEnglish: "🔍 Searching for folders matching: %s",
+		LangChinese: "🔍 正在搜索匹配的文件夹: %s",
+	},
+	MsgCdResults: {
+		LangEnglish: "📂 Found %d matching folder(s):\n\n%s",
+		LangChinese: "📂 找到 %d 个匹配文件夹:\n\n%s",
+	},
+	MsgCdNoResults: {
+		LangEnglish: "❌ No folders found matching: %s\n\nTry a different keyword.",
+		LangChinese: "❌ 未找到匹配的文件夹: %s\n\n请换个关键词试试。",
+	},
+	MsgCdSwitched: {
+		LangEnglish: "✅ Switched to: `%s`\n\nNew sessions will run in this directory.",
+		LangChinese: "✅ 已切换到: `%s`\n\n新会话将在此目录下运行。",
+	},
+	MsgCdInvalidPath: {
+		LangEnglish: "❌ Path does not exist or is not a directory: %s",
+		LangChinese: "❌ 路径不存在或不是文件夹: %s",
+	},
+	MsgCdSelectHint: {
+		LangEnglish: "Reply `/cd <number>` to select, or `/cd <new keyword>` to search again.",
+		LangChinese: "回复 `/cd <序号>` 选择，或 `/cd <新关键词>` 重新搜索。",
 	},
 }
 

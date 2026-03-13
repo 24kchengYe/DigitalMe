@@ -104,6 +104,14 @@ func (a *Agent) Name() string { return "claudecode" }
 
 func (a *Agent) WorkDir() string { return a.workDir }
 
+// SetWorkDir changes the working directory for future sessions.
+func (a *Agent) SetWorkDir(dir string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.workDir = dir
+	slog.Info("claudecode: work_dir changed", "dir", dir)
+}
+
 func (a *Agent) SetModel(model string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

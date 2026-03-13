@@ -1763,8 +1763,9 @@ func (e *Engine) cmdStop(p Platform, msg *Message) {
 		close(state.stopCh)
 	}
 
-	// Cancel pending permission if any
+	// Revoke approve-all so subsequent messages require per-request confirmation
 	state.mu.Lock()
+	state.approveAll = false
 	pending := state.pending
 	if pending != nil {
 		state.pending = nil

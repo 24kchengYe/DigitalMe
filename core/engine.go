@@ -147,6 +147,10 @@ type Engine struct {
 
 	disabledCmds map[string]bool
 
+	// /cd pending search results per session
+	cdResultsMu sync.Mutex
+	cdResults   map[string][]string // sessionKey → list of directory paths
+
 	// Interactive agent session management
 	interactiveMu     sync.Mutex
 	interactiveStates map[string]*interactiveState // key = sessionKey
@@ -194,6 +198,7 @@ func NewEngine(name string, ag Agent, platforms []Platform, sessionStorePath str
 		skills:            NewSkillRegistry(),
 		aliases:           make(map[string]string),
 		interactiveStates: make(map[string]*interactiveState),
+		cdResults:         make(map[string][]string),
 		startedAt:         time.Now(),
 	}
 
@@ -1068,6 +1073,7 @@ var builtinCommands = []struct {
 	{[]string{"delete", "del", "rm"}, "delete"},
 	{[]string{"screenshot", "ss", "screen"}, "screenshot"},
 	{[]string{"sendback", "sb"}, "sendback"},
+	{[]string{"cd", "chdir"}, "cd"},
 }
 
 // matchPrefix finds a unique command matching the given prefix.
@@ -1205,6 +1211,8 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 			return true
 		}
 		e.cmdSendback(p, msg, args)
+	case "cd":
+		e.cmdCd(p, msg, args)
 	default:
 		if custom, ok := e.commands.Resolve(cmd); ok {
 			e.executeCustomCommand(p, msg, custom, args)
@@ -2834,6 +2842,192 @@ func (e *Engine) agentWorkDir() (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// cmdCd implements the /cd command for switching the agent's working directory.
+// Flow: /cd → show current dir; /cd <hint> → search & list; /cd <number> → select from results.
+func (e *Engine) cmdCd(p Platform, msg *Message, args []string) {
+	type workDirSetter interface {
+		WorkDir() string
+		SetWorkDir(dir string)
+	}
+	setter, ok := e.agent.(workDirSetter)
+	if !ok {
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgCdNotSupported))
+		return
+	}
+
+	// /cd with no args: show current directory
+	if len(args) == 0 {
+		e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdCurrent), setter.WorkDir()))
+		return
+	}
+
+	input := strings.Join(args, " ")
+
+	// Check if input is a number → select from previous search results
+	if n, err := strconv.Atoi(input); err == nil {
+		e.cdResultsMu.Lock()
+		results := e.cdResults[msg.SessionKey]
+		e.cdResultsMu.Unlock()
+
+		if results != nil && n >= 1 && n <= len(results) {
+			selected := results[n-1]
+			e.applyCd(p, msg, setter, selected)
+			return
+		}
+	}
+
+	// Check if input is an exact existing directory path
+	if filepath.IsAbs(input) {
+		if info, err := os.Stat(input); err == nil && info.IsDir() {
+			e.applyCd(p, msg, setter, input)
+			return
+		}
+	}
+
+	// Search for matching directories
+	e.send(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdSearching), input))
+
+	results := searchDirectories(input)
+
+	if len(results) == 0 {
+		e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdNoResults), input))
+		return
+	}
+
+	// If exactly 1 result, switch directly
+	if len(results) == 1 {
+		e.applyCd(p, msg, setter, results[0])
+		return
+	}
+
+	// Store results for number-based selection
+	e.cdResultsMu.Lock()
+	e.cdResults[msg.SessionKey] = results
+	e.cdResultsMu.Unlock()
+
+	// Build numbered list
+	var sb strings.Builder
+	for i, dir := range results {
+		sb.WriteString(fmt.Sprintf("`%d.` `%s`\n", i+1, dir))
+	}
+	sb.WriteString("\n")
+	sb.WriteString(e.i18n.T(MsgCdSelectHint))
+
+	e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdResults), len(results), sb.String()))
+}
+
+func (e *Engine) applyCd(p Platform, msg *Message, setter interface{ SetWorkDir(string) }, dir string) {
+	// Cleanup current interactive state since the directory is changing
+	e.cleanupInteractiveState(msg.SessionKey)
+
+	setter.SetWorkDir(dir)
+
+	// Clear pending cd results
+	e.cdResultsMu.Lock()
+	delete(e.cdResults, msg.SessionKey)
+	e.cdResultsMu.Unlock()
+
+	e.reply(p, msg.ReplyCtx, fmt.Sprintf(e.i18n.T(MsgCdSwitched), dir))
+}
+
+// searchDirectories finds directories matching a keyword hint by scanning common root paths.
+func searchDirectories(hint string) []string {
+	hint = strings.ToLower(hint)
+
+	// Root directories to scan
+	var roots []string
+
+	// Add common development directories
+	if home, err := os.UserHomeDir(); err == nil {
+		roots = append(roots, home)
+	}
+
+	// Scan drive letters on Windows
+	for _, drive := range []string{"C:", "D:", "E:", "F:"} {
+		if info, err := os.Stat(drive + `\`); err == nil && info.IsDir() {
+			roots = append(roots, drive+`\`)
+		}
+	}
+
+	var matches []string
+	seen := make(map[string]bool)
+
+	for _, root := range roots {
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			full := filepath.Join(root, name)
+			if seen[full] {
+				continue
+			}
+			if matchDirHint(name, hint) {
+				matches = append(matches, full)
+				seen[full] = true
+				continue
+			}
+			// Also search one level deeper
+			subEntries, err := os.ReadDir(full)
+			if err != nil {
+				continue
+			}
+			for _, sub := range subEntries {
+				if !sub.IsDir() {
+					continue
+				}
+				subFull := filepath.Join(full, sub.Name())
+				if seen[subFull] {
+					continue
+				}
+				if matchDirHint(sub.Name(), hint) {
+					matches = append(matches, subFull)
+					seen[subFull] = true
+				}
+			}
+		}
+		if len(matches) >= 20 {
+			break
+		}
+	}
+
+	// Sort: prefer shorter paths (closer to root)
+	sort.Slice(matches, func(i, j int) bool {
+		return len(matches[i]) < len(matches[j])
+	})
+
+	if len(matches) > 10 {
+		matches = matches[:10]
+	}
+	return matches
+}
+
+// matchDirHint checks if a directory name matches the search hint.
+func matchDirHint(dirName, hint string) bool {
+	lower := strings.ToLower(dirName)
+	// Direct substring match
+	if strings.Contains(lower, hint) {
+		return true
+	}
+	// Match each word in the hint
+	words := strings.Fields(hint)
+	if len(words) > 1 {
+		allMatch := true
+		for _, w := range words {
+			if !strings.Contains(lower, w) {
+				allMatch = false
+				break
+			}
+		}
+		return allMatch
+	}
+	return false
 }
 
 // extToFeishuType maps file extensions to Feishu file_type values.

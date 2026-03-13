@@ -112,6 +112,100 @@ func (a *Agent) SetWorkDir(dir string) {
 	slog.Info("claudecode: work_dir changed", "dir", dir)
 }
 
+// CopySessionsTo copies Claude Code session files from the current workDir's
+// project directory to the target directory's project directory. This preserves
+// conversation history when switching directories via /cd.
+func (a *Agent) CopySessionsTo(targetDir string) (int, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return 0, fmt.Errorf("cannot determine home dir: %w", err)
+	}
+
+	absOld, err := filepath.Abs(a.workDir)
+	if err != nil {
+		return 0, fmt.Errorf("resolve old work_dir: %w", err)
+	}
+	absNew, err := filepath.Abs(targetDir)
+	if err != nil {
+		return 0, fmt.Errorf("resolve new work_dir: %w", err)
+	}
+
+	srcDir := findProjectDir(homeDir, absOld)
+	if srcDir == "" {
+		return 0, fmt.Errorf("no session directory found for %s", absOld)
+	}
+
+	// Build destination directory using the same encoding as Claude Code
+	projectsBase := filepath.Join(homeDir, ".claude", "projects")
+	dstKey := strings.NewReplacer("/", "-", "\\", "-", ":", "-").Replace(absNew)
+	dstDir := filepath.Join(projectsBase, dstKey)
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		return 0, fmt.Errorf("create target project dir: %w", err)
+	}
+
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return 0, fmt.Errorf("read source dir: %w", err)
+	}
+
+	copied := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+		srcPath := filepath.Join(srcDir, entry.Name())
+		dstPath := filepath.Join(dstDir, entry.Name())
+
+		// Skip if already exists in destination
+		if _, err := os.Stat(dstPath); err == nil {
+			continue
+		}
+
+		data, err := os.ReadFile(srcPath)
+		if err != nil {
+			slog.Warn("claudecode: skip copy session file", "file", entry.Name(), "error", err)
+			continue
+		}
+
+		// Replace old directory paths with new directory paths in the session content.
+		// Use multiple path formats since JSONL may contain forward-slash, backslash,
+		// or escaped-backslash variants.
+		content := string(data)
+		oldFwd := strings.ReplaceAll(absOld, "\\", "/")
+		newFwd := strings.ReplaceAll(absNew, "\\", "/")
+		oldBack := strings.ReplaceAll(absOld, "/", "\\")
+		newBack := strings.ReplaceAll(absNew, "/", "\\")
+		// JSON-escaped backslashes: \\  →  \\\\
+		oldEsc := strings.ReplaceAll(absOld, "\\", "\\\\")
+		newEsc := strings.ReplaceAll(absNew, "\\", "\\\\")
+
+		content = strings.ReplaceAll(content, oldFwd, newFwd)
+		content = strings.ReplaceAll(content, oldBack, newBack)
+		content = strings.ReplaceAll(content, oldEsc, newEsc)
+
+		if err := os.WriteFile(dstPath, []byte(content), 0o644); err != nil {
+			slog.Warn("claudecode: failed to write session file", "file", entry.Name(), "error", err)
+			continue
+		}
+		copied++
+	}
+
+	// Also copy CLAUDE.md if it exists in the old workDir and not in the new one
+	oldClaude := filepath.Join(absOld, "CLAUDE.md")
+	newClaude := filepath.Join(absNew, "CLAUDE.md")
+	if _, err := os.Stat(oldClaude); err == nil {
+		if _, err := os.Stat(newClaude); os.IsNotExist(err) {
+			if data, err := os.ReadFile(oldClaude); err == nil {
+				os.WriteFile(newClaude, data, 0o644)
+				slog.Info("claudecode: copied CLAUDE.md to new directory")
+			}
+		}
+	}
+
+	slog.Info("claudecode: sessions copied", "from", srcDir, "to", dstDir, "count", copied)
+	return copied, nil
+}
+
 func (a *Agent) SetModel(model string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

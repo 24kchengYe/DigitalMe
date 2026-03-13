@@ -291,14 +291,19 @@ const (
 	MsgSendUploading  MsgKey = "send_uploading"
 	MsgSendNotSupport MsgKey = "send_not_support"
 
-	MsgCdCurrent        MsgKey = "cd_current"
-	MsgCdNotSupported   MsgKey = "cd_not_supported"
-	MsgCdSearching      MsgKey = "cd_searching"
-	MsgCdResults        MsgKey = "cd_results"
-	MsgCdNoResults      MsgKey = "cd_no_results"
-	MsgCdSwitched       MsgKey = "cd_switched"
-	MsgCdInvalidPath    MsgKey = "cd_invalid_path"
-	MsgCdSelectHint     MsgKey = "cd_select_hint"
+	MsgCdCurrent          MsgKey = "cd_current"
+	MsgCdNotSupported     MsgKey = "cd_not_supported"
+	MsgCdSearching        MsgKey = "cd_searching"
+	MsgCdResults          MsgKey = "cd_results"
+	MsgCdNoResults        MsgKey = "cd_no_results"
+	MsgCdSwitched         MsgKey = "cd_switched"
+	MsgCdSwitchedWithCopy MsgKey = "cd_switched_with_copy"
+	MsgCdInvalidPath      MsgKey = "cd_invalid_path"
+	MsgCdSelectHint       MsgKey = "cd_select_hint"
+	MsgCdConfirmMove      MsgKey = "cd_confirm_move"
+	MsgCdNoPending        MsgKey = "cd_no_pending"
+	MsgCdCopyFailed       MsgKey = "cd_copy_failed"
+	MsgCdSelectOrScanHint MsgKey = "cd_select_or_scan_hint"
 )
 
 var messages = map[MsgKey]map[Language]string{
@@ -1620,6 +1625,26 @@ var messages = map[MsgKey]map[Language]string{
 	MsgCdSelectHint: {
 		LangEnglish: "Reply `/cd <number>` to select, or `/cd <new keyword>` to search again.",
 		LangChinese: "回复 `/cd <序号>` 选择，或 `/cd <新关键词>` 重新搜索。",
+	},
+	MsgCdConfirmMove: {
+		LangEnglish: "📂 Target: `%s`\n\nCopy conversation history to the new directory?\n\n`/cd move` — switch and copy history\n`/cd go` — switch without copying",
+		LangChinese: "📂 目标: `%s`\n\n是否复制对话记忆到新目录？\n\n`/cd move` — 切换并复制记忆\n`/cd go` — 直接切换，不复制",
+	},
+	MsgCdNoPending: {
+		LangEnglish: "No directory selected. Use `/cd <keyword>` to search first.",
+		LangChinese: "未选择目录。请先用 `/cd <关键词>` 搜索。",
+	},
+	MsgCdCopyFailed: {
+		LangEnglish: "⚠️ Failed to copy sessions: %v\nSwitching without copy...",
+		LangChinese: "⚠️ 复制会话失败: %v\n将直接切换...",
+	},
+	MsgCdSwitchedWithCopy: {
+		LangEnglish: "✅ Switched to: `%s`\n\nCopied %d session file(s). New sessions will have previous context.",
+		LangChinese: "✅ 已切换到: `%s`\n\n已复制 %d 个会话文件，新会话将保留之前的对话记忆。",
+	},
+	MsgCdSelectOrScanHint: {
+		LangEnglish: "Reply `/cd <number>` to select.\nNot what you're looking for? Reply `/cd no` to scan all drives.",
+		LangChinese: "回复 `/cd <序号>` 选择。\n不是你要找的？回复 `/cd no` 搜索全部磁盘。",
 	},
 }
 

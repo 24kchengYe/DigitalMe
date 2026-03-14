@@ -104,6 +104,29 @@ func (a *Agent) Name() string { return "claudecode" }
 
 func (a *Agent) WorkDir() string { return a.workDir }
 
+// HasSession checks whether a session ID belongs to the current working directory
+// by looking for the corresponding JSONL file.
+func (a *Agent) HasSession(sessionID string) bool {
+	if sessionID == "" {
+		return false
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	absWorkDir, err := filepath.Abs(a.workDir)
+	if err != nil {
+		return false
+	}
+	projectDir := findProjectDir(homeDir, absWorkDir)
+	if projectDir == "" {
+		return false
+	}
+	path := filepath.Join(projectDir, sessionID+".jsonl")
+	_, err = os.Stat(path)
+	return err == nil
+}
+
 // SetWorkDir changes the working directory for future sessions.
 func (a *Agent) SetWorkDir(dir string) {
 	a.mu.Lock()

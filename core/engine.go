@@ -788,6 +788,23 @@ func (e *Engine) getOrCreateInteractiveState(sessionKey string, p Platform, repl
 		inj.SetSessionEnv(envVars)
 	}
 
+	// Validate that the saved agent session ID belongs to the current working directory.
+	// After /cd, a stale ID from the old directory would cause empty responses.
+	if session.AgentSessionID != "" {
+		type sessionChecker interface {
+			HasSession(sessionID string) bool
+		}
+		if checker, ok := e.agent.(sessionChecker); ok {
+			if !checker.HasSession(session.AgentSessionID) {
+				slog.Info("stale agent session ID, resetting",
+					"old_id", session.AgentSessionID, "session_key", sessionKey)
+				session.AgentSessionID = ""
+				session.ClearHistory()
+				e.sessions.Save()
+			}
+		}
+	}
+
 	startAt := time.Now()
 	agentSession, err := e.agent.StartSession(e.ctx, session.AgentSessionID)
 	startElapsed := time.Since(startAt)

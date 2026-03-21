@@ -417,7 +417,7 @@ Built on top of the excellent [cc-connect](https://github.com/chenhg5/cc-connect
 
 ![Visitors](https://visitor-badge.laobi.icu/badge?page_id=24kchengYe.DigitalMe)
 
-[![Star History Chart](https://api.star-history.com/svg?repos=24kchengYe/DigitalMe&type=Date)](https://star-history.com/#24kchengYe/DigitalMe&Date)
+[![Star History](https://starchart.cc/24kchengYe/DigitalMe.svg)](https://starchart.cc/24kchengYe/DigitalMe)
 
 ---
 
